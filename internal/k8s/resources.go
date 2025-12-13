@@ -83,6 +83,19 @@ type ResourceRequirements struct {
 	MemoryLimit   string
 }
 
+type ConfigMapInfo struct {
+	Name string
+	Age  string
+	Keys int
+}
+
+type SecretInfo struct {
+	Name string
+	Type string
+	Age  string
+	Keys int
+}
+
 func ListNamespaces(ctx context.Context, clientset *kubernetes.Clientset) ([]string, error) {
 	nsList, err := clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -338,6 +351,76 @@ func ListAllPods(ctx context.Context, clientset *kubernetes.Clientset, namespace
 	})
 
 	return podInfos, nil
+}
+
+// ListConfigMaps returns all configmaps in a namespace
+func ListConfigMaps(ctx context.Context, clientset *kubernetes.Clientset, namespace string) ([]ConfigMapInfo, error) {
+	cms, err := clientset.CoreV1().ConfigMaps(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	var cmInfos []ConfigMapInfo
+	for _, cm := range cms.Items {
+		cmInfos = append(cmInfos, ConfigMapInfo{
+			Name: cm.Name,
+			Age:  formatAge(cm.CreationTimestamp.Time),
+			Keys: len(cm.Data),
+		})
+	}
+
+	sort.Slice(cmInfos, func(i, j int) bool {
+		return cmInfos[i].Name < cmInfos[j].Name
+	})
+
+	return cmInfos, nil
+}
+
+// ConfigMapData holds full ConfigMap data
+type ConfigMapData struct {
+	Name      string
+	Namespace string
+	Age       string
+	Data      map[string]string
+}
+
+// GetConfigMap returns full ConfigMap data
+func GetConfigMap(ctx context.Context, clientset *kubernetes.Clientset, namespace, name string) (*ConfigMapData, error) {
+	cm, err := clientset.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	return &ConfigMapData{
+		Name:      cm.Name,
+		Namespace: cm.Namespace,
+		Age:       formatAge(cm.CreationTimestamp.Time),
+		Data:      cm.Data,
+	}, nil
+}
+
+// ListSecrets returns all secrets in a namespace
+func ListSecrets(ctx context.Context, clientset *kubernetes.Clientset, namespace string) ([]SecretInfo, error) {
+	secrets, err := clientset.CoreV1().Secrets(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	var secretInfos []SecretInfo
+	for _, s := range secrets.Items {
+		secretInfos = append(secretInfos, SecretInfo{
+			Name: s.Name,
+			Type: string(s.Type),
+			Age:  formatAge(s.CreationTimestamp.Time),
+			Keys: len(s.Data),
+		})
+	}
+
+	sort.Slice(secretInfos, func(i, j int) bool {
+		return secretInfos[i].Name < secretInfos[j].Name
+	})
+
+	return secretInfos, nil
 }
 
 func podToPodInfo(p *corev1.Pod) PodInfo {

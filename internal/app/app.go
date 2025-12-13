@@ -34,6 +34,7 @@ type Model struct {
 	spinner            spinner.Model
 	workloadActionMenu components.WorkloadActionMenu
 	confirmDialog      components.ConfirmDialog
+	configMapViewer    components.ConfigMapViewer
 	view               ViewState
 	width              int
 	height             int
@@ -55,9 +56,11 @@ type loadedMsg struct {
 	err        error
 }
 
-type podsLoadedMsg struct {
-	pods []k8s.PodInfo
-	err  error
+type resourcesLoadedMsg struct {
+	pods       []k8s.PodInfo
+	configmaps []k8s.ConfigMapInfo
+	secrets    []k8s.SecretInfo
+	err        error
 }
 
 type dashboardDataMsg struct {
@@ -90,6 +93,11 @@ type workloadActionMsg struct {
 
 type tickMsg time.Time
 
+type configMapDataMsg struct {
+	data *k8s.ConfigMapData
+	err  error
+}
+
 func New() (*Model, error) {
 	client, err := k8s.NewClient()
 	if err != nil {
@@ -117,9 +125,10 @@ func New() (*Model, error) {
 		spinner:            s,
 		workloadActionMenu: components.NewWorkloadActionMenu(),
 		confirmDialog:      components.NewConfirmDialog(),
+		configMapViewer:    components.NewConfigMapViewer(),
 		view:               ViewNavigator,
 		loading:            true,
-		keys:      keys.DefaultKeyMap(),
+		keys:               keys.DefaultKeyMap(),
 	}, nil
 }
 
@@ -162,14 +171,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case podsLoadedMsg:
+	case resourcesLoadedMsg:
 		m.loading = false
 		if msg.err != nil {
 			m.err = msg.err
 			return m, nil
 		}
 		m.navigator.SetPods(msg.pods)
-		m.navigator.SetMode(components.ModePods)
+		m.navigator.SetConfigMaps(msg.configmaps)
+		m.navigator.SetSecrets(msg.secrets)
+		m.navigator.SetMode(components.ModeResources)
+		return m, nil
+
+	case configMapDataMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.statusMsg = "Error loading ConfigMap: " + msg.err.Error()
+			return m, nil
+		}
+		m.configMapViewer.SetSize(m.width, m.height)
+		m.configMapViewer.Show(msg.data, m.k8sClient.Namespace())
+		return m, nil
+
+	case components.ConfigMapViewerClosed:
+		// ConfigMap viewer was closed, nothing special to do
 		return m, nil
 
 	case dashboardDataMsg:
@@ -200,8 +225,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Go back to pods list after deletion
 			m.view = ViewNavigator
 			m.pod = nil
-			m.navigator.SetMode(components.ModePods)
-			return m, m.loadAllPods()
+			m.navigator.SetMode(components.ModeResources)
+			return m, m.loadAllResources()
 		}
 		return m, nil
 
@@ -282,10 +307,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.tickCmd(),
 			)
 		}
-		// Refresh pods list in real-time when viewing pods
-		if m.view == ViewNavigator && m.navigator.Mode() == components.ModePods {
+		// Refresh resources list in real-time when viewing resources
+		if m.view == ViewNavigator && m.navigator.Mode() == components.ModeResources {
 			return m, tea.Batch(
-				m.loadAllPods(),
+				m.loadAllResources(),
 				m.tickCmd(),
 			)
 		}
@@ -311,6 +336,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m, nil
+		}
+
+		// ConfigMap viewer takes priority
+		if m.configMapViewer.IsVisible() {
+			m.configMapViewer, cmd = m.configMapViewer.Update(msg)
+			return m, cmd
 		}
 
 		// Clear status message on key press in navigator
@@ -520,6 +551,19 @@ func (m Model) View() string {
 		)
 	}
 
+	// Render ConfigMap viewer as overlay
+	if m.configMapViewer.IsVisible() {
+		return lipgloss.Place(
+			m.width,
+			m.height,
+			lipgloss.Left,
+			lipgloss.Top,
+			m.configMapViewer.View(),
+			lipgloss.WithWhitespaceChars(" "),
+			lipgloss.WithWhitespaceForeground(styles.Background),
+		)
+	}
+
 	// Create bordered box for content
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -538,12 +582,12 @@ func (m *Model) handleBack() (tea.Model, tea.Cmd) {
 		m.view = ViewNavigator
 		m.pod = nil
 		// Always go back to pods list
-		m.navigator.SetMode(components.ModePods)
+		m.navigator.SetMode(components.ModeResources)
 		return m, nil
 
 	case ViewNavigator:
 		switch m.navigator.Mode() {
-		case components.ModePods:
+		case components.ModeResources:
 			// Go back to namespace selection
 			m.navigator.SetMode(components.ModeNamespace)
 			m.workload = nil
@@ -571,30 +615,41 @@ func (m *Model) handleEnter() (tea.Model, tea.Cmd) {
 				return m, m.loadPods(workload)
 			}
 
-		case components.ModePods:
-			pod := m.navigator.SelectedPod()
-			if pod != nil {
-				m.pod = pod
-				m.view = ViewDashboard
-				m.dashboard.SetPod(pod)
-				// Set breadcrumb: namespace > pods > podname
-				workloadName := ""
-				if m.workload != nil {
-					workloadName = m.workload.Name
+		case components.ModeResources:
+			switch m.navigator.Section() {
+			case components.SectionPods:
+				pod := m.navigator.SelectedPod()
+				if pod != nil {
+					m.pod = pod
+					m.view = ViewDashboard
+					m.dashboard.SetPod(pod)
+					// Set breadcrumb: namespace > pods > podname
+					workloadName := ""
+					if m.workload != nil {
+						workloadName = m.workload.Name
+					}
+					m.dashboard.SetBreadcrumb(
+						m.k8sClient.Namespace(),
+						"pods",
+						workloadName,
+						pod.Name,
+					)
+					m.dashboard.SetContext(m.k8sClient.Context())
+					m.dashboard.SetNamespace(m.k8sClient.Namespace())
+					m.loading = true
+					return m, tea.Batch(
+						m.loadDashboardData(pod),
+						m.tickCmd(),
+					)
 				}
-				m.dashboard.SetBreadcrumb(
-					m.k8sClient.Namespace(),
-					"pods",
-					workloadName,
-					pod.Name,
-				)
-				m.dashboard.SetContext(m.k8sClient.Context())
-				m.dashboard.SetNamespace(m.k8sClient.Namespace())
-				m.loading = true
-				return m, tea.Batch(
-					m.loadDashboardData(pod),
-					m.tickCmd(),
-				)
+			case components.SectionConfigMaps:
+				cm := m.navigator.SelectedConfigMap()
+				if cm != nil {
+					m.loading = true
+					return m, m.loadConfigMapData(cm.Name)
+				}
+			case components.SectionSecrets:
+				// Secrets - no action yet
 			}
 
 		case components.ModeNamespace:
@@ -603,8 +658,8 @@ func (m *Model) handleEnter() (tea.Model, tea.Cmd) {
 				m.k8sClient.SetNamespace(ns)
 				m.config.SetLastNamespace(ns)
 				m.loading = true
-				// Load all pods directly instead of workloads
-				return m, m.loadAllPods()
+				// Load all resources (pods, configmaps, secrets)
+				return m, m.loadAllResources()
 			}
 
 		case components.ModeResourceType:
@@ -670,20 +725,36 @@ func (m *Model) loadPods(workload *k8s.WorkloadInfo) tea.Cmd {
 		ctx := context.Background()
 		pods, err := k8s.GetWorkloadPods(ctx, m.k8sClient.Clientset(), *workload)
 		if err != nil {
-			return podsLoadedMsg{err: err}
+			return resourcesLoadedMsg{err: err}
 		}
-		return podsLoadedMsg{pods: pods}
+		// Also load ConfigMaps and Secrets
+		configmaps, _ := k8s.ListConfigMaps(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace())
+		secrets, _ := k8s.ListSecrets(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace())
+		return resourcesLoadedMsg{pods: pods, configmaps: configmaps, secrets: secrets}
 	}
 }
 
-func (m *Model) loadAllPods() tea.Cmd {
+func (m *Model) loadAllResources() tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 		pods, err := k8s.ListAllPods(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace())
 		if err != nil {
-			return podsLoadedMsg{err: err}
+			return resourcesLoadedMsg{err: err}
 		}
-		return podsLoadedMsg{pods: pods}
+		configmaps, _ := k8s.ListConfigMaps(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace())
+		secrets, _ := k8s.ListSecrets(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace())
+		return resourcesLoadedMsg{pods: pods, configmaps: configmaps, secrets: secrets}
+	}
+}
+
+func (m *Model) loadConfigMapData(name string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		data, err := k8s.GetConfigMap(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace(), name)
+		if err != nil {
+			return configMapDataMsg{err: err}
+		}
+		return configMapDataMsg{data: data}
 	}
 }
 

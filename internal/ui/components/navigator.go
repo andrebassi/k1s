@@ -17,16 +17,28 @@ type NavigatorMode int
 
 const (
 	ModeWorkloads NavigatorMode = iota
-	ModePods
+	ModeResources
 	ModeNamespace
 	ModeResourceType
+)
+
+type PodViewSection int
+
+const (
+	SectionPods PodViewSection = iota
+	SectionConfigMaps
+	SectionSecrets
 )
 
 type Navigator struct {
 	workloads    []k8s.WorkloadInfo
 	pods         []k8s.PodInfo
+	configmaps   []k8s.ConfigMapInfo
+	secrets      []k8s.SecretInfo
 	namespaces   []string
 	cursor       int
+	section      PodViewSection // Current section in pods view
+	sectionCursors [3]int       // Cursor for each section
 	mode         NavigatorMode
 	width        int
 	height       int
@@ -92,6 +104,16 @@ func (n Navigator) Update(msg tea.Msg) (Navigator, tea.Cmd) {
 			n.pageUp()
 		case key.Matches(msg, n.keys.PageDown):
 			n.pageDown()
+		case key.Matches(msg, n.keys.NextPanel):
+			// Tab to next section in pods view
+			if n.mode == ModeResources {
+				n.nextSection()
+			}
+		case key.Matches(msg, n.keys.PrevPanel):
+			// Shift+Tab to previous section in pods view
+			if n.mode == ModeResources {
+				n.prevSection()
+			}
 		case key.Matches(msg, n.keys.Search):
 			n.searching = true
 			n.searchInput.SetValue(n.searchQuery)
@@ -106,42 +128,95 @@ func (n Navigator) Update(msg tea.Msg) (Navigator, tea.Cmd) {
 }
 
 func (n *Navigator) moveUp() {
-	if n.cursor > 0 {
-		n.cursor--
+	if n.mode == ModeResources {
+		// Move within current section
+		if n.sectionCursors[n.section] > 0 {
+			n.sectionCursors[n.section]--
+		}
+	} else {
+		if n.cursor > 0 {
+			n.cursor--
+		}
 	}
 }
 
 func (n *Navigator) moveDown() {
-	max := n.maxItems() - 1
-	if n.cursor < max {
-		n.cursor++
+	if n.mode == ModeResources {
+		// Move within current section
+		max := n.sectionMaxItems() - 1
+		if n.sectionCursors[n.section] < max {
+			n.sectionCursors[n.section]++
+		}
+	} else {
+		max := n.maxItems() - 1
+		if n.cursor < max {
+			n.cursor++
+		}
 	}
 }
 
 func (n *Navigator) pageUp() {
-	n.cursor -= 10
-	if n.cursor < 0 {
-		n.cursor = 0
+	if n.mode == ModeResources {
+		n.sectionCursors[n.section] -= 10
+		if n.sectionCursors[n.section] < 0 {
+			n.sectionCursors[n.section] = 0
+		}
+	} else {
+		n.cursor -= 10
+		if n.cursor < 0 {
+			n.cursor = 0
+		}
 	}
 }
 
 func (n *Navigator) pageDown() {
-	max := n.maxItems() - 1
-	n.cursor += 10
-	if n.cursor > max {
-		n.cursor = max
+	if n.mode == ModeResources {
+		max := n.sectionMaxItems() - 1
+		n.sectionCursors[n.section] += 10
+		if n.sectionCursors[n.section] > max {
+			n.sectionCursors[n.section] = max
+		}
+		if n.sectionCursors[n.section] < 0 {
+			n.sectionCursors[n.section] = 0
+		}
+	} else {
+		max := n.maxItems() - 1
+		n.cursor += 10
+		if n.cursor > max {
+			n.cursor = max
+		}
+		if n.cursor < 0 {
+			n.cursor = 0
+		}
 	}
-	if n.cursor < 0 {
-		n.cursor = 0
+}
+
+func (n *Navigator) nextSection() {
+	n.section = (n.section + 1) % 3
+}
+
+func (n *Navigator) prevSection() {
+	n.section = (n.section + 2) % 3
+}
+
+func (n Navigator) sectionMaxItems() int {
+	switch n.section {
+	case SectionPods:
+		return len(n.filteredPods())
+	case SectionConfigMaps:
+		return len(n.configmaps)
+	case SectionSecrets:
+		return len(n.secrets)
 	}
+	return 0
 }
 
 func (n Navigator) maxItems() int {
 	switch n.mode {
 	case ModeWorkloads:
 		return len(n.filteredWorkloads())
-	case ModePods:
-		return len(n.filteredPods())
+	case ModeResources:
+		return n.sectionMaxItems()
 	case ModeNamespace:
 		return len(n.filteredNamespaces())
 	case ModeResourceType:
@@ -181,8 +256,8 @@ func (n Navigator) View() string {
 	switch n.mode {
 	case ModeWorkloads:
 		b.WriteString(n.renderWorkloads())
-	case ModePods:
-		b.WriteString(n.renderPods())
+	case ModeResources:
+		b.WriteString(n.renderResources())
 	case ModeNamespace:
 		b.WriteString(n.renderNamespaces())
 	case ModeResourceType:
@@ -199,9 +274,9 @@ func (n Navigator) renderHeader() string {
 	case ModeWorkloads:
 		icon = "◈"
 		title = strings.ToUpper(string(n.resourceType))
-	case ModePods:
-		icon = "●"
-		title = "PODS"
+	case ModeResources:
+		// No header for resources view - sections have their own headers
+		return ""
 	case ModeNamespace:
 		icon = "◉"
 		title = "SELECT NAMESPACE"
@@ -264,33 +339,147 @@ func (n Navigator) renderWorkloadRow(w k8s.WorkloadInfo, selected bool) string {
 		cursor, name, w.Ready, statusStyle.Render(w.Status), w.Age)
 }
 
-func (n Navigator) renderPods() string {
+func (n Navigator) renderResources() string {
+	var b strings.Builder
+
+	// Calculate height for each section
+	totalHeight := n.height - 6 // Reserve space for headers
+	podsHeight := totalHeight / 2
+	cmHeight := totalHeight / 4
+	secretsHeight := totalHeight / 4
+
+	// PODS Section
+	sectionActive := n.section == SectionPods
+	b.WriteString(n.renderSectionHeader("PODS", len(n.pods), sectionActive))
+	b.WriteString("\n")
+	b.WriteString(n.renderPodsTable(podsHeight, sectionActive))
+	b.WriteString("\n\n")
+
+	// CONFIGMAPS Section
+	sectionActive = n.section == SectionConfigMaps
+	b.WriteString(n.renderSectionHeader("ConfigMaps", len(n.configmaps), sectionActive))
+	b.WriteString("\n")
+	b.WriteString(n.renderConfigMapsTable(cmHeight, sectionActive))
+	b.WriteString("\n\n")
+
+	// SECRETS Section
+	sectionActive = n.section == SectionSecrets
+	b.WriteString(n.renderSectionHeader("Secrets", len(n.secrets), sectionActive))
+	b.WriteString("\n")
+	b.WriteString(n.renderSecretsTable(secretsHeight, sectionActive))
+
+	return b.String()
+}
+
+func (n Navigator) renderSectionHeader(title string, count int, active bool) string {
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(styles.Primary)
+	titleWithCount := titleStyle.Render(fmt.Sprintf("%s (%d)", title, count))
+	if active {
+		indicator := styles.StatusRunning.Render("●")
+		return indicator + " " + titleWithCount
+	}
+	return "  " + titleWithCount
+}
+
+func (n Navigator) renderPodsTable(maxRows int, active bool) string {
 	pods := n.filteredPods()
 	if len(pods) == 0 {
-		if n.searchQuery != "" {
-			return styles.StatusMuted.Render("  No pods match filter")
-		}
 		return styles.StatusMuted.Render("  No pods found")
 	}
 
 	var b strings.Builder
-
-	// Header
 	header := fmt.Sprintf("  %-38s %-8s %-18s %-8s %-6s", "NAME", "READY", "STATUS", "RESTARTS", "AGE")
 	b.WriteString(styles.TableHeaderStyle.Render(header))
 	b.WriteString("\n")
 
-	// Items
-	visible := n.visibleRange(len(pods))
-	for i := visible.start; i < visible.end; i++ {
-		p := pods[i]
-		b.WriteString(n.renderPodRow(p, i == n.cursor))
+	cursor := n.sectionCursors[SectionPods]
+	for i, p := range pods {
+		if i >= maxRows-1 {
+			b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("  ... and %d more", len(pods)-i)))
+			break
+		}
+		selected := active && i == cursor
+		b.WriteString(n.renderPodRow(p, selected))
 		b.WriteString("\n")
 	}
-
-	// Scroll indicator
-	b.WriteString(n.renderScrollIndicator(visible, len(pods)))
 	return b.String()
+}
+
+func (n Navigator) renderConfigMapsTable(maxRows int, active bool) string {
+	if len(n.configmaps) == 0 {
+		return styles.StatusMuted.Render("  No configmaps found")
+	}
+
+	var b strings.Builder
+	header := fmt.Sprintf("  %-40s %-8s %-6s", "NAME", "KEYS", "AGE")
+	b.WriteString(styles.TableHeaderStyle.Render(header))
+	b.WriteString("\n")
+
+	cursor := n.sectionCursors[SectionConfigMaps]
+	for i, cm := range n.configmaps {
+		if i >= maxRows-1 {
+			b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("  ... and %d more", len(n.configmaps)-i)))
+			break
+		}
+		selected := active && i == cursor
+		b.WriteString(n.renderConfigMapRow(cm, selected))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func (n Navigator) renderSecretsTable(maxRows int, active bool) string {
+	if len(n.secrets) == 0 {
+		return styles.StatusMuted.Render("  No secrets found")
+	}
+
+	var b strings.Builder
+	header := fmt.Sprintf("  %-40s %-30s %-8s %-6s", "NAME", "TYPE", "KEYS", "AGE")
+	b.WriteString(styles.TableHeaderStyle.Render(header))
+	b.WriteString("\n")
+
+	cursor := n.sectionCursors[SectionSecrets]
+	for i, s := range n.secrets {
+		if i >= maxRows-1 {
+			b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("  ... and %d more", len(n.secrets)-i)))
+			break
+		}
+		selected := active && i == cursor
+		b.WriteString(n.renderSecretRow(s, selected))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func (n Navigator) renderConfigMapRow(cm k8s.ConfigMapInfo, selected bool) string {
+	cursorStr := "  "
+	if selected {
+		cursorStr = styles.CursorStyle.Render("> ")
+	}
+
+	name := styles.Truncate(cm.Name, 40)
+
+	if selected {
+		rowStyle := lipgloss.NewStyle().Background(styles.Surface)
+		return rowStyle.Render(fmt.Sprintf("%s%-40s %-8d %-6s", cursorStr, name, cm.Keys, cm.Age))
+	}
+	return fmt.Sprintf("%s%-40s %-8d %-6s", cursorStr, name, cm.Keys, cm.Age)
+}
+
+func (n Navigator) renderSecretRow(s k8s.SecretInfo, selected bool) string {
+	cursorStr := "  "
+	if selected {
+		cursorStr = styles.CursorStyle.Render("> ")
+	}
+
+	name := styles.Truncate(s.Name, 40)
+	secretType := styles.Truncate(s.Type, 30)
+
+	if selected {
+		rowStyle := lipgloss.NewStyle().Background(styles.Surface)
+		return rowStyle.Render(fmt.Sprintf("%s%-40s %-30s %-8d %-6s", cursorStr, name, secretType, s.Keys, s.Age))
+	}
+	return fmt.Sprintf("%s%-40s %-30s %-8d %-6s", cursorStr, name, secretType, s.Keys, s.Age)
 }
 
 func (n Navigator) renderPodRow(p k8s.PodInfo, selected bool) string {
@@ -494,11 +683,31 @@ func (n *Navigator) SetWorkloads(workloads []k8s.WorkloadInfo) {
 func (n *Navigator) SetPods(pods []k8s.PodInfo) {
 	n.pods = pods
 	// Keep cursor in bounds but don't reset to 0 (for real-time refresh)
-	if n.cursor >= len(pods) {
-		n.cursor = len(pods) - 1
+	if n.sectionCursors[SectionPods] >= len(pods) {
+		n.sectionCursors[SectionPods] = len(pods) - 1
 	}
-	if n.cursor < 0 {
-		n.cursor = 0
+	if n.sectionCursors[SectionPods] < 0 {
+		n.sectionCursors[SectionPods] = 0
+	}
+}
+
+func (n *Navigator) SetConfigMaps(cms []k8s.ConfigMapInfo) {
+	n.configmaps = cms
+	if n.sectionCursors[SectionConfigMaps] >= len(cms) {
+		n.sectionCursors[SectionConfigMaps] = len(cms) - 1
+	}
+	if n.sectionCursors[SectionConfigMaps] < 0 {
+		n.sectionCursors[SectionConfigMaps] = 0
+	}
+}
+
+func (n *Navigator) SetSecrets(secrets []k8s.SecretInfo) {
+	n.secrets = secrets
+	if n.sectionCursors[SectionSecrets] >= len(secrets) {
+		n.sectionCursors[SectionSecrets] = len(secrets) - 1
+	}
+	if n.sectionCursors[SectionSecrets] < 0 {
+		n.sectionCursors[SectionSecrets] = 0
 	}
 }
 
@@ -531,10 +740,31 @@ func (n Navigator) SelectedWorkload() *k8s.WorkloadInfo {
 
 func (n Navigator) SelectedPod() *k8s.PodInfo {
 	pods := n.filteredPods()
-	if n.cursor >= 0 && n.cursor < len(pods) {
-		return &pods[n.cursor]
+	cursor := n.sectionCursors[SectionPods]
+	if cursor >= 0 && cursor < len(pods) {
+		return &pods[cursor]
 	}
 	return nil
+}
+
+func (n Navigator) SelectedConfigMap() *k8s.ConfigMapInfo {
+	cursor := n.sectionCursors[SectionConfigMaps]
+	if cursor >= 0 && cursor < len(n.configmaps) {
+		return &n.configmaps[cursor]
+	}
+	return nil
+}
+
+func (n Navigator) SelectedSecret() *k8s.SecretInfo {
+	cursor := n.sectionCursors[SectionSecrets]
+	if cursor >= 0 && cursor < len(n.secrets) {
+		return &n.secrets[cursor]
+	}
+	return nil
+}
+
+func (n Navigator) Section() PodViewSection {
+	return n.section
 }
 
 func (n Navigator) SelectedNamespace() string {
