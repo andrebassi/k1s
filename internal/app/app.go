@@ -521,6 +521,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.nodeSearchQuery = ""
 				return m, nil
 			}
+			// Clear node filter with c key
+			if msg.String() == "c" && m.nodeSearchQuery != "" {
+				m.nodeSearchQuery = ""
+				m.nodeCursor = 0
+				return m, nil
+			}
 		}
 
 		// Normal key handling when not searching
@@ -830,13 +836,22 @@ func (m Model) renderNodesPanel(width, height int) string {
 	}
 	b.WriteString(titleStyle.Render("SELECT NODE"))
 
-	// Show search query if searching
-	if m.nodeSearching || m.nodeSearchQuery != "" {
-		filterStyle := lipgloss.NewStyle().Foreground(styles.Warning).Bold(true)
-		b.WriteString(filterStyle.Render(fmt.Sprintf("  [%s]", m.nodeSearchQuery)))
-		if m.nodeSearching {
-			b.WriteString(styles.CursorStyle.Render("_"))
-		}
+	// Show search bar or filter indicator (same style as namespace)
+	if m.nodeSearching {
+		searchStyle := lipgloss.NewStyle().
+			Foreground(styles.Text).
+			Background(styles.Surface).
+			Padding(0, 1)
+		b.WriteString("  ")
+		b.WriteString(searchStyle.Render("/ " + m.nodeSearchQuery + "_"))
+	} else if m.nodeSearchQuery != "" {
+		filterStyle := lipgloss.NewStyle().
+			Foreground(styles.Secondary).
+			Bold(true)
+		clearHint := styles.HelpDescStyle.Render(" (c to clear)")
+		b.WriteString("  ")
+		b.WriteString(filterStyle.Render(fmt.Sprintf("Filter: %s", m.nodeSearchQuery)))
+		b.WriteString(clearHint)
 	}
 	b.WriteString("\n\n")
 
