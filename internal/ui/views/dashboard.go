@@ -564,13 +564,13 @@ func (d Dashboard) renderBottomRow() string {
 	halfWidth := (d.width - 1) / 2
 	panelHeight := (d.height - 4) / 2
 
-	d.metrics.SetSize(halfWidth-4, panelHeight-2)
 	d.manifest.SetSize(halfWidth-4, panelHeight-2)
+	d.metrics.SetSize(halfWidth-4, panelHeight-2)
 
-	metricsView := d.wrapPanel(d.metrics.View(), halfWidth-2, panelHeight, d.focus == FocusMetrics)
 	manifestView := d.wrapPanel(d.manifest.View(), halfWidth-2, panelHeight, d.focus == FocusManifest)
+	metricsView := d.wrapPanel(d.metrics.View(), halfWidth-2, panelHeight, d.focus == FocusMetrics)
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, metricsView, manifestView)
+	return lipgloss.JoinHorizontal(lipgloss.Top, manifestView, metricsView)
 }
 
 func (d Dashboard) wrapPanel(content string, width, height int, active bool) string {
