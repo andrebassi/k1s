@@ -835,25 +835,27 @@ func (m Model) renderNodesPanel(width, height int) string {
 		b.WriteString("  ")
 	}
 	b.WriteString(titleStyle.Render("SELECT NODE"))
+	b.WriteString("\n")
 
-	// Show search bar or filter indicator (same style as namespace)
+	// Show search bar or filter indicator on separate line (same style as namespace)
 	if m.nodeSearching {
 		searchStyle := lipgloss.NewStyle().
 			Foreground(styles.Text).
 			Background(styles.Surface).
 			Padding(0, 1)
-		b.WriteString("  ")
 		b.WriteString(searchStyle.Render("/ " + m.nodeSearchQuery + "_"))
+		b.WriteString("\n\n")
 	} else if m.nodeSearchQuery != "" {
 		filterStyle := lipgloss.NewStyle().
 			Foreground(styles.Secondary).
 			Bold(true)
 		clearHint := styles.HelpDescStyle.Render(" (c to clear)")
-		b.WriteString("  ")
 		b.WriteString(filterStyle.Render(fmt.Sprintf("Filter: %s", m.nodeSearchQuery)))
 		b.WriteString(clearHint)
+		b.WriteString("\n\n")
+	} else {
+		b.WriteString("\n")
 	}
-	b.WriteString("\n\n")
 
 	// Table header
 	header := fmt.Sprintf("  %-3s %-40s %-8s %s", "#", "NODE", "STATUS", "PODS")
