@@ -50,9 +50,7 @@ func (e EventsPanel) Update(msg tea.Msg) (EventsPanel, tea.Cmd) {
 		if e.searching {
 			switch msg.String() {
 			case "esc":
-				// Esc behavior:
-				// 1. If filter has content: clear filter
-				// 2. If filter empty: exit search mode
+				// Esc: clear filter or exit search mode
 				if e.filter != "" {
 					e.filter = ""
 					e.searchInput.SetValue("")
@@ -62,7 +60,8 @@ func (e EventsPanel) Update(msg tea.Msg) (EventsPanel, tea.Cmd) {
 				e.searching = false
 				e.searchInput.Blur()
 				return e, nil
-			case "enter":
+			case "tab", "enter":
+				// Tab/Enter: exit search mode, keep filter
 				e.searching = false
 				e.searchInput.Blur()
 				e.filter = e.searchInput.Value()

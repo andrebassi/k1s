@@ -494,14 +494,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.nodeSearching = false
 				}
 				return m, nil
-			case "tab":
-				// Tab: exit search mode, keep filter, allow navigation
+			case "tab", "enter":
+				// Tab/Enter: exit search mode, keep filter, allow navigation
 				m.nodeSearching = false
 				return m, nil
-			case "enter":
-				// Enter: exit search and select the node
-				m.nodeSearching = false
-				return m.handleEnter()
 			case "backspace":
 				if len(m.nodeSearchQuery) > 0 {
 					m.nodeSearchQuery = m.nodeSearchQuery[:len(m.nodeSearchQuery)-1]

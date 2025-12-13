@@ -75,9 +75,7 @@ func (l LogsPanel) Update(msg tea.Msg) (LogsPanel, tea.Cmd) {
 		if l.searching {
 			switch msg.String() {
 			case "esc":
-				// Esc behavior:
-				// 1. If filter has content: clear filter
-				// 2. If filter empty: exit search mode
+				// Esc: clear filter or exit search mode
 				if l.filter != "" {
 					l.filter = ""
 					l.searchInput.SetValue("")
@@ -87,7 +85,8 @@ func (l LogsPanel) Update(msg tea.Msg) (LogsPanel, tea.Cmd) {
 				l.searching = false
 				l.searchInput.Blur()
 				return l, nil
-			case "enter":
+			case "tab", "enter":
+				// Tab/Enter: exit search mode, keep filter
 				l.searching = false
 				l.searchInput.Blur()
 				l.filter = l.searchInput.Value()
