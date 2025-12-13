@@ -221,29 +221,23 @@ func (m *MetricsPanel) updateContent() {
 
 	// Combine columns side by side if we have node info
 	if rightCol.Len() > 0 {
-		// Calculate box widths (account for borders and padding)
-		leftBoxWidth := (m.width / 2) - 2
-		rightBoxWidth := m.width - leftBoxWidth - 4
-		boxHeight := m.height - 2
+		// Calculate column widths
+		colWidth := (m.width - 3) / 2 // -3 for separator and spacing
+		visibleLines := m.height - 5
 
-		// Cache content lines for both boxes
+		// Cache content lines for both columns
 		m.leftContentLines = strings.Split(leftCol.String(), "\n")
 		m.rightContentLines = strings.Split(rightCol.String(), "\n")
 
-		// Calculate visible area
-		visibleLines := boxHeight - 4 // Account for title and padding
-		if visibleLines < 1 {
-			visibleLines = 1
-		}
-
-		// Build LEFT box content with scroll
-		var leftVisibleContent strings.Builder
+		// Build LEFT column content
+		var leftContent strings.Builder
+		leftTitleStyle := styles.SubtitleStyle
 		leftTitle := "Container Resources"
 		if m.leftScrollOffset > 0 {
-			leftTitle += " " + styles.StatusMuted.Render("▲")
+			leftTitle += " ▲"
 		}
-		leftVisibleContent.WriteString(styles.SubtitleStyle.Render(leftTitle))
-		leftVisibleContent.WriteString("\n\n")
+		leftContent.WriteString(leftTitleStyle.Render(leftTitle))
+		leftContent.WriteString("\n\n")
 
 		leftStartLine := m.leftScrollOffset
 		leftEndLine := leftStartLine + visibleLines
@@ -251,28 +245,24 @@ func (m *MetricsPanel) updateContent() {
 			leftEndLine = len(m.leftContentLines)
 		}
 
-		if leftStartLine < len(m.leftContentLines) {
-			for i := leftStartLine; i < leftEndLine; i++ {
-				leftVisibleContent.WriteString(m.leftContentLines[i])
-				if i < leftEndLine-1 {
-					leftVisibleContent.WriteString("\n")
-				}
-			}
+		for i := leftStartLine; i < leftEndLine && i < len(m.leftContentLines); i++ {
+			leftContent.WriteString(m.leftContentLines[i])
+			leftContent.WriteString("\n")
 		}
 
 		if leftEndLine < len(m.leftContentLines) {
-			leftVisibleContent.WriteString("\n")
-			leftVisibleContent.WriteString(styles.StatusMuted.Render("▼ more..."))
+			leftContent.WriteString(styles.StatusMuted.Render("▼ more..."))
 		}
 
-		// Build RIGHT box content with scroll
-		var rightVisibleContent strings.Builder
+		// Build RIGHT column content
+		var rightContent strings.Builder
+		rightTitleStyle := styles.SubtitleStyle
 		rightTitle := "Node Info"
 		if m.rightScrollOffset > 0 {
-			rightTitle += " " + styles.StatusMuted.Render("▲")
+			rightTitle += " ▲"
 		}
-		rightVisibleContent.WriteString(styles.SubtitleStyle.Render(rightTitle))
-		rightVisibleContent.WriteString("\n\n")
+		rightContent.WriteString(rightTitleStyle.Render(rightTitle))
+		rightContent.WriteString("\n\n")
 
 		rightStartLine := m.rightScrollOffset
 		rightEndLine := rightStartLine + visibleLines
@@ -280,47 +270,39 @@ func (m *MetricsPanel) updateContent() {
 			rightEndLine = len(m.rightContentLines)
 		}
 
-		if rightStartLine < len(m.rightContentLines) {
-			for i := rightStartLine; i < rightEndLine; i++ {
-				rightVisibleContent.WriteString(m.rightContentLines[i])
-				if i < rightEndLine-1 {
-					rightVisibleContent.WriteString("\n")
-				}
-			}
+		for i := rightStartLine; i < rightEndLine && i < len(m.rightContentLines); i++ {
+			rightContent.WriteString(m.rightContentLines[i])
+			rightContent.WriteString("\n")
 		}
 
 		if rightEndLine < len(m.rightContentLines) {
-			rightVisibleContent.WriteString("\n")
-			rightVisibleContent.WriteString(styles.StatusMuted.Render("▼ more..."))
+			rightContent.WriteString(styles.StatusMuted.Render("▼ more..."))
 		}
 
-		// Box styles - focused box has green border
-		leftBorderColor := styles.Surface
-		rightBorderColor := styles.Surface
-		if m.focusedBox == 0 {
-			leftBorderColor = styles.Success
-		} else {
-			rightBorderColor = styles.Success
+		// Style columns
+		leftColStyle := lipgloss.NewStyle().Width(colWidth).Padding(0, 1)
+		rightColStyle := lipgloss.NewStyle().Width(colWidth).Padding(0, 1)
+
+		leftColRendered := leftColStyle.Render(leftContent.String())
+		rightColRendered := rightColStyle.Render(rightContent.String())
+
+		// Create full-height separator line
+		separatorHeight := m.height
+		if separatorHeight < 1 {
+			separatorHeight = 1
 		}
+		var separatorLines strings.Builder
+		for i := 0; i < separatorHeight; i++ {
+			separatorLines.WriteString("│")
+			if i < separatorHeight-1 {
+				separatorLines.WriteString("\n")
+			}
+		}
+		separator := lipgloss.NewStyle().
+			Foreground(styles.Surface).
+			Render(separatorLines.String())
 
-		leftBoxStyle := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(leftBorderColor).
-			Width(leftBoxWidth).
-			Height(boxHeight).
-			Padding(0, 1)
-
-		rightBoxStyle := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(rightBorderColor).
-			Width(rightBoxWidth).
-			Height(boxHeight).
-			Padding(0, 1)
-
-		leftBox := leftBoxStyle.Render(leftVisibleContent.String())
-		rightBox := rightBoxStyle.Render(rightVisibleContent.String())
-
-		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftBox, rightBox)
+		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftColRendered, separator, rightColRendered)
 		m.viewport.SetContent(combined)
 	} else {
 		m.viewport.SetContent(leftCol.String())

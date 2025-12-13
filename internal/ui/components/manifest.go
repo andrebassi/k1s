@@ -67,8 +67,6 @@ func (m ManifestPanel) View() string {
 
 	var header strings.Builder
 	header.WriteString(styles.PanelTitleStyle.Render("Pod Details"))
-	header.WriteString(styles.SubtitleStyle.Render(fmt.Sprintf(" [%s]", manifestViewModeLabels[m.viewMode])))
-	header.WriteString(styles.HelpDescStyle.Render(" (d:cycle)"))
 	header.WriteString("\n")
 
 	return header.String() + m.viewport.View()
@@ -166,6 +164,10 @@ func (m ManifestPanel) renderPodInfo() string {
 
 	if m.pod.OwnerRef != "" {
 		b.WriteString(fmt.Sprintf("  %-12s %s/%s\n", "Owner:", m.pod.OwnerKind, m.pod.OwnerRef))
+		// Show workload that created the ReplicaSet
+		if m.related != nil && m.related.Owner != nil && m.related.Owner.WorkloadKind != "" {
+			b.WriteString(fmt.Sprintf("  %-12s %s/%s\n", "Workload:", m.related.Owner.WorkloadKind, m.related.Owner.WorkloadName))
+		}
 	}
 
 	return b.String()
@@ -321,7 +323,11 @@ func (m ManifestPanel) renderContainerResources() string {
 		if len(c.Ports) > 0 {
 			ports := make([]string, len(c.Ports))
 			for i, p := range c.Ports {
-				ports[i] = fmt.Sprintf("%d", p)
+				if p.Name != "" {
+					ports[i] = fmt.Sprintf("%s:%d/%s", p.Name, p.ContainerPort, p.Protocol)
+				} else {
+					ports[i] = fmt.Sprintf("%d/%s", p.ContainerPort, p.Protocol)
+				}
 			}
 			b.WriteString(fmt.Sprintf("    Ports: %s\n", strings.Join(ports, ", ")))
 		}

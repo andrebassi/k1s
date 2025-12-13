@@ -1040,8 +1040,10 @@ type VirtualServiceRoute struct {
 }
 
 type OwnerInfo struct {
-	Kind string
-	Name string
+	Kind         string
+	Name         string
+	WorkloadKind string // Parent of ReplicaSet (Deployment, etc)
+	WorkloadName string
 }
 
 func GetRelatedResources(ctx context.Context, clientset *kubernetes.Clientset, dynamicClient dynamic.Interface, pod PodInfo) (*RelatedResources, error) {
@@ -1051,6 +1053,15 @@ func GetRelatedResources(ctx context.Context, clientset *kubernetes.Clientset, d
 		related.Owner = &OwnerInfo{
 			Kind: pod.OwnerKind,
 			Name: pod.OwnerRef,
+		}
+
+		// If owner is ReplicaSet, fetch the parent workload (Deployment, Rollout, etc)
+		if pod.OwnerKind == "ReplicaSet" {
+			rs, err := clientset.AppsV1().ReplicaSets(pod.Namespace).Get(ctx, pod.OwnerRef, metav1.GetOptions{})
+			if err == nil && len(rs.OwnerReferences) > 0 {
+				related.Owner.WorkloadKind = rs.OwnerReferences[0].Kind
+				related.Owner.WorkloadName = rs.OwnerReferences[0].Name
+			}
 		}
 	}
 
