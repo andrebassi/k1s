@@ -312,6 +312,13 @@ func (d Dashboard) Update(msg tea.Msg) (Dashboard, tea.Cmd) {
 		case key.Matches(msg, d.keys.ToggleFullView):
 			d.fullscreen = !d.fullscreen
 			return d, nil
+
+		case key.Matches(msg, d.keys.Enter):
+			// Enter on Logs or Events panel toggles fullscreen
+			if d.focus == FocusLogs || d.focus == FocusEvents {
+				d.fullscreen = !d.fullscreen
+				return d, nil
+			}
 		}
 	}
 
@@ -561,4 +568,12 @@ func (d Dashboard) HasActiveOverlay() bool {
 		d.podActionMenu.IsVisible() ||
 		d.actionMenu.IsVisible() ||
 		d.help.IsVisible()
+}
+
+func (d Dashboard) IsFullscreen() bool {
+	return d.fullscreen
+}
+
+func (d *Dashboard) CloseFullscreen() {
+	d.fullscreen = false
 }

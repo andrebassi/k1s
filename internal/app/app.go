@@ -362,11 +362,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.view == ViewDashboard && (m.dashboard.IsLogsSearching() || m.dashboard.HasActiveOverlay()) {
 				break // Fall through to dashboard update
 			}
+			// If dashboard is fullscreen, just close fullscreen instead of going back
+			if m.view == ViewDashboard && m.dashboard.IsFullscreen() {
+				m.dashboard.CloseFullscreen()
+				return m, nil
+			}
 			return m.handleBack()
 
 		case key.Matches(msg, m.keys.Enter):
 			// Don't handle enter if dashboard has active overlay - let dashboard handle it
 			if m.view == ViewDashboard && m.dashboard.HasActiveOverlay() {
+				break // Fall through to dashboard update
+			}
+			// Let dashboard handle Enter for fullscreen toggle
+			if m.view == ViewDashboard {
 				break // Fall through to dashboard update
 			}
 			return m.handleEnter()
