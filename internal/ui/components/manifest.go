@@ -152,6 +152,12 @@ func (m ManifestPanel) renderPodInfo() string {
 	b.WriteString(fmt.Sprintf("  %-12s %s\n", "Node:", styles.Truncate(m.pod.Node, m.width-16)))
 	b.WriteString(fmt.Sprintf("  %-12s %s\n", "IP:", m.pod.IP))
 
+	// Show image(s) from containers
+	if len(m.pod.Containers) > 0 {
+		image := m.pod.Containers[0].Image
+		b.WriteString(fmt.Sprintf("  %-12s %s\n", "Image:", styles.Truncate(image, m.width-16)))
+	}
+
 	statusStyle := styles.GetStatusStyle(m.pod.Status)
 	b.WriteString(fmt.Sprintf("  %-12s %s\n", "Status:", statusStyle.Render(m.pod.Status)))
 	b.WriteString(fmt.Sprintf("  %-12s %s\n", "Ready:", m.pod.Ready))

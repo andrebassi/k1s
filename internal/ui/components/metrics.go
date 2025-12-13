@@ -6,18 +6,22 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/andrebassi/k8sdebug/internal/k8s"
 	"github.com/andrebassi/k8sdebug/internal/ui/styles"
 )
 
 type MetricsPanel struct {
-	metrics   *k8s.PodMetrics
-	pod       *k8s.PodInfo
-	viewport  viewport.Model
-	ready     bool
-	width     int
-	height    int
-	available bool
+	metrics      *k8s.PodMetrics
+	pod          *k8s.PodInfo
+	node         *k8s.NodeInfo
+	viewport     viewport.Model
+	ready        bool
+	width        int
+	height       int
+	available    bool
+	scrollOffset int      // Scroll offset for container resources
+	contentLines []string // Cached content lines for scrolling
 }
 
 func NewMetricsPanel() MetricsPanel {
@@ -29,9 +33,36 @@ func (m MetricsPanel) Init() tea.Cmd {
 }
 
 func (m MetricsPanel) Update(msg tea.Msg) (MetricsPanel, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "k": // Scroll up with k (vim style)
+			if m.scrollOffset > 0 {
+				m.scrollOffset--
+				m.updateContent()
+			}
+			return m, nil
+		case "j": // Scroll down with j (vim style)
+			maxScroll := len(m.contentLines) - m.getVisibleLines()
+			if maxScroll < 0 {
+				maxScroll = 0
+			}
+			if m.scrollOffset < maxScroll {
+				m.scrollOffset++
+				m.updateContent()
+			}
+			return m, nil
+		}
+	}
+
 	var cmd tea.Cmd
 	m.viewport, cmd = m.viewport.Update(msg)
 	return m, cmd
+}
+
+func (m *MetricsPanel) getVisibleLines() int {
+	// Account for box borders and title
+	return m.height - 6
 }
 
 func (m MetricsPanel) View() string {
@@ -57,6 +88,12 @@ func (m *MetricsPanel) SetMetrics(metrics *k8s.PodMetrics) {
 
 func (m *MetricsPanel) SetPod(pod *k8s.PodInfo) {
 	m.pod = pod
+	m.scrollOffset = 0 // Reset scroll on pod change
+	m.updateContent()
+}
+
+func (m *MetricsPanel) SetNode(node *k8s.NodeInfo) {
+	m.node = node
 	m.updateContent()
 }
 
@@ -80,43 +117,161 @@ func (m *MetricsPanel) updateContent() {
 		return
 	}
 
-	var content strings.Builder
-
 	if m.pod == nil {
-		content.WriteString(styles.StatusMuted.Render("No pod selected"))
-		m.viewport.SetContent(content.String())
+		m.viewport.SetContent(styles.StatusMuted.Render("No pod selected"))
 		return
 	}
 
+	// Build left column (container resources)
+	var leftCol strings.Builder
 	for _, c := range m.pod.Containers {
-		content.WriteString(styles.LogContainer.Render(fmt.Sprintf("Container: %s\n", c.Name)))
-		content.WriteString("\n")
+		leftCol.WriteString(styles.LogContainer.Render(fmt.Sprintf("Container: %s\n", c.Name)))
+		leftCol.WriteString("\n")
 
 		// Resources table
-		content.WriteString(fmt.Sprintf("  %-14s %s\n", "CPU Request:", formatResourceValue(c.Resources.CPURequest)))
-		content.WriteString(fmt.Sprintf("  %-14s %s\n", "CPU Limit:", formatResourceValue(c.Resources.CPULimit)))
-		content.WriteString(fmt.Sprintf("  %-14s %s\n", "Mem Request:", formatResourceValue(c.Resources.MemoryRequest)))
-		content.WriteString(fmt.Sprintf("  %-14s %s\n", "Mem Limit:", formatResourceValue(c.Resources.MemoryLimit)))
+		leftCol.WriteString(fmt.Sprintf("  %-14s %s\n", "CPU Request:", formatResourceValue(c.Resources.CPURequest)))
+		leftCol.WriteString(fmt.Sprintf("  %-14s %s\n", "CPU Limit:", formatResourceValue(c.Resources.CPULimit)))
+		leftCol.WriteString(fmt.Sprintf("  %-14s %s\n", "Mem Request:", formatResourceValue(c.Resources.MemoryRequest)))
+		leftCol.WriteString(fmt.Sprintf("  %-14s %s\n", "Mem Limit:", formatResourceValue(c.Resources.MemoryLimit)))
 
 		// Usage metrics (real-time from metrics-server)
 		if m.metrics != nil {
 			for _, cm := range m.metrics.Containers {
 				if cm.Name == c.Name {
-					content.WriteString("\n")
-					content.WriteString(fmt.Sprintf("  %-14s %s\n", "CPU Usage:", styles.StatusRunning.Render(cm.CPUUsage)))
-					content.WriteString(fmt.Sprintf("  %-14s %s\n", "Mem Usage:", styles.StatusRunning.Render(cm.MemoryUsage)))
+					leftCol.WriteString("\n")
+					leftCol.WriteString(fmt.Sprintf("  %-14s %s\n", "CPU Usage:", styles.StatusRunning.Render(cm.CPUUsage)))
+					leftCol.WriteString(fmt.Sprintf("  %-14s %s\n", "Mem Usage:", styles.StatusRunning.Render(cm.MemoryUsage)))
 					break
 				}
 			}
 		}
-		content.WriteString("\n")
+		leftCol.WriteString("\n")
 	}
 
 	if m.metrics == nil && m.available {
-		content.WriteString(styles.StatusMuted.Render("Waiting for metrics..."))
+		leftCol.WriteString(styles.StatusMuted.Render("Waiting for metrics..."))
 	}
 
-	m.viewport.SetContent(content.String())
+	// Build right column (node info)
+	var rightCol strings.Builder
+	if m.node != nil {
+		rightCol.WriteString(styles.SubtitleStyle.Render("Node Info"))
+		rightCol.WriteString("\n\n")
+		rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "Name:", styles.Truncate(m.node.Name, 25)))
+
+		statusStyle := styles.StatusRunning
+		if m.node.Status != "Ready" {
+			statusStyle = styles.StatusError
+		}
+		rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "Status:", statusStyle.Render(m.node.Status)))
+		rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "Roles:", m.node.Roles))
+		rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "Version:", m.node.Version))
+		rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "Age:", m.node.Age))
+		rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "IP:", m.node.InternalIP))
+		rightCol.WriteString(fmt.Sprintf("%-12s %d\n", "Pods:", m.node.PodCount))
+		if m.node.CPU != "" {
+			rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "CPU:", m.node.CPU))
+		}
+		if m.node.Memory != "" {
+			rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "Memory:", m.node.Memory))
+		}
+	} else if m.pod != nil && m.pod.Node != "" {
+		rightCol.WriteString(styles.SubtitleStyle.Render("Node"))
+		rightCol.WriteString("\n\n")
+		rightCol.WriteString(fmt.Sprintf("%s\n", m.pod.Node))
+	}
+
+	// Combine columns side by side if we have node info
+	if rightCol.Len() > 0 {
+		// Calculate box widths (account for borders and padding)
+		leftBoxWidth := (m.width / 2) - 2
+		rightBoxWidth := m.width - leftBoxWidth - 4
+		boxHeight := m.height - 2
+
+		// Cache content lines for scrolling
+		m.contentLines = strings.Split(leftCol.String(), "\n")
+
+		// Calculate visible area
+		visibleLines := boxHeight - 4 // Account for title and padding
+		if visibleLines < 1 {
+			visibleLines = 1
+		}
+
+		// Apply scroll offset
+		startLine := m.scrollOffset
+		endLine := startLine + visibleLines
+		if endLine > len(m.contentLines) {
+			endLine = len(m.contentLines)
+		}
+
+		// Build visible content with scroll indicators
+		var visibleContent strings.Builder
+
+		// Title with scroll indicator
+		title := "Container Resources"
+		if m.scrollOffset > 0 {
+			title += " " + styles.StatusMuted.Render("▲")
+		}
+		visibleContent.WriteString(styles.SubtitleStyle.Render(title))
+		visibleContent.WriteString("\n\n")
+
+		// Add visible lines
+		if startLine < len(m.contentLines) {
+			for i := startLine; i < endLine; i++ {
+				visibleContent.WriteString(m.contentLines[i])
+				if i < endLine-1 {
+					visibleContent.WriteString("\n")
+				}
+			}
+		}
+
+		// Add scroll down indicator if there's more content
+		if endLine < len(m.contentLines) {
+			visibleContent.WriteString("\n")
+			visibleContent.WriteString(styles.StatusMuted.Render("▼ more..."))
+		}
+
+		// Box style for container resources
+		leftBoxStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(styles.Surface).
+			Width(leftBoxWidth).
+			Height(boxHeight).
+			Padding(0, 1)
+
+		// Box style for node info
+		rightBoxStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(styles.Surface).
+			Width(rightBoxWidth).
+			Height(boxHeight).
+			Padding(0, 1)
+
+		leftBox := leftBoxStyle.Render(visibleContent.String())
+		rightBox := rightBoxStyle.Render(rightCol.String())
+
+		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftBox, rightBox)
+		m.viewport.SetContent(combined)
+	} else {
+		m.viewport.SetContent(leftCol.String())
+	}
+}
+
+// stripAnsi removes ANSI escape codes for accurate length calculation
+func stripAnsi(s string) string {
+	result := s
+	for {
+		start := strings.Index(result, "\x1b[")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(result[start:], "m")
+		if end == -1 {
+			break
+		}
+		result = result[:start] + result[start+end+1:]
+	}
+	return result
 }
 
 func (m MetricsPanel) checkResourceIssues() []string {

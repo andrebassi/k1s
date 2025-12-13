@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -44,6 +45,10 @@ type Model struct {
 	keys               keys.KeyMap
 	workload           *k8s.WorkloadInfo
 	pod                *k8s.PodInfo
+	nodes              []k8s.NodeInfo
+	nodeCursor         int
+	selectedNode       string // Node name for filtering pods
+	nodesPanelActive   bool   // True when nodes panel is focused (right side)
 	statusMsg          string // Status message for navigator view
 
 	// State tracking for reactive log fetching
@@ -54,6 +59,7 @@ type Model struct {
 type loadedMsg struct {
 	workloads  []k8s.WorkloadInfo
 	namespaces []string
+	nodes      []k8s.NodeInfo
 	err        error
 }
 
@@ -71,6 +77,7 @@ type dashboardDataMsg struct {
 	metrics *k8s.PodMetrics
 	related *k8s.RelatedResources
 	helpers []k8s.DebugHelper
+	node    *k8s.NodeInfo
 }
 
 type logsUpdatedMsg struct {
@@ -102,6 +109,12 @@ type configMapDataMsg struct {
 type secretDataMsg struct {
 	data *k8s.SecretData
 	err  error
+}
+
+type nodePodLoadedMsg struct {
+	nodeName string
+	pods     []k8s.PodInfo
+	err      error
 }
 
 func New() (*Model, error) {
@@ -172,6 +185,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.navigator.SetWorkloads(msg.workloads)
 		m.navigator.SetNamespaces(msg.namespaces)
+		m.nodes = msg.nodes
 		// Start with namespace selection if no workloads loaded (initial start)
 		if len(msg.workloads) == 0 && len(msg.namespaces) > 0 {
 			m.navigator.SetMode(components.ModeNamespace)
@@ -218,6 +232,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Secret viewer was closed, nothing special to do
 		return m, nil
 
+	case nodePodLoadedMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.statusMsg = "Error loading pods: " + msg.err.Error()
+			return m, nil
+		}
+		m.selectedNode = msg.nodeName
+		m.navigator.SetPods(msg.pods)
+		m.navigator.SetConfigMaps(nil) // Clear configmaps for node view
+		m.navigator.SetSecrets(nil)    // Clear secrets for node view
+		m.navigator.SetMode(components.ModeResources)
+		return m, nil
+
 	case dashboardDataMsg:
 		m.loading = false
 		// Update pod info for real-time status
@@ -230,6 +257,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dashboard.SetMetrics(msg.metrics)
 		m.dashboard.SetRelated(msg.related)
 		m.dashboard.SetHelpers(msg.helpers)
+		m.dashboard.SetNode(msg.node)
 		return m, nil
 
 	case logsUpdatedMsg:
@@ -412,6 +440,53 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Namespace):
 			if m.view == ViewNavigator {
 				m.navigator.SetMode(components.ModeNamespace)
+				m.nodesPanelActive = false
+				return m, nil
+			}
+
+		case key.Matches(msg, m.keys.NextPanel):
+			// In namespace mode, switch between namespace and node panels
+			if m.view == ViewNavigator && m.navigator.Mode() == components.ModeNamespace {
+				m.nodesPanelActive = !m.nodesPanelActive
+				return m, nil
+			}
+
+		case key.Matches(msg, m.keys.PrevPanel):
+			// In namespace mode, switch between namespace and node panels
+			if m.view == ViewNavigator && m.navigator.Mode() == components.ModeNamespace {
+				m.nodesPanelActive = !m.nodesPanelActive
+				return m, nil
+			}
+
+		case msg.String() == "left":
+			// In namespace mode, switch to namespace panel (left)
+			if m.view == ViewNavigator && m.navigator.Mode() == components.ModeNamespace {
+				m.nodesPanelActive = false
+				return m, nil
+			}
+
+		case msg.String() == "right":
+			// In namespace mode, switch to node panel (right)
+			if m.view == ViewNavigator && m.navigator.Mode() == components.ModeNamespace && len(m.nodes) > 0 {
+				m.nodesPanelActive = true
+				return m, nil
+			}
+
+		case key.Matches(msg, m.keys.Up):
+			// Handle node panel navigation
+			if m.view == ViewNavigator && m.navigator.Mode() == components.ModeNamespace && m.nodesPanelActive {
+				if m.nodeCursor > 0 {
+					m.nodeCursor--
+				}
+				return m, nil
+			}
+
+		case key.Matches(msg, m.keys.Down):
+			// Handle node panel navigation
+			if m.view == ViewNavigator && m.navigator.Mode() == components.ModeNamespace && m.nodesPanelActive {
+				if m.nodeCursor < len(m.nodes)-1 {
+					m.nodeCursor++
+				}
 				return m, nil
 			}
 
@@ -533,7 +608,28 @@ func (m Model) View() string {
 	var content string
 	switch m.view {
 	case ViewNavigator:
-		content = m.navigator.View()
+		// In namespace mode, show nodes panel on the right
+		if m.navigator.Mode() == components.ModeNamespace && len(m.nodes) > 0 {
+			leftWidth := contentWidth / 2
+			rightWidth := contentWidth - leftWidth - 3 // 3 for separator
+
+			// Set panel active state for indicator
+			m.navigator.SetPanelActive(!m.nodesPanelActive)
+
+			leftContent := m.navigator.View()
+			rightContent := m.renderNodesPanel(rightWidth, contentHeight)
+
+			// Join panels side by side
+			content = lipgloss.JoinHorizontal(
+				lipgloss.Top,
+				lipgloss.NewStyle().Width(leftWidth).Render(leftContent),
+				lipgloss.NewStyle().Foreground(styles.Surface).Render(" │ "),
+				lipgloss.NewStyle().Width(rightWidth).Render(rightContent),
+			)
+		} else {
+			m.navigator.SetPanelActive(true)
+			content = m.navigator.View()
+		}
 	case ViewDashboard:
 		content = m.dashboard.View()
 	}
@@ -616,6 +712,104 @@ func (m Model) View() string {
 	return boxedContent + "\n" + footer
 }
 
+func (m Model) renderNodesPanel(width, height int) string {
+	var b strings.Builder
+
+	// Header
+	iconStyle := lipgloss.NewStyle().Foreground(styles.Primary).Bold(true)
+	titleStyle := lipgloss.NewStyle().Foreground(styles.Text).Bold(true)
+
+	if m.nodesPanelActive {
+		b.WriteString(iconStyle.Render("● "))
+	} else {
+		b.WriteString("  ")
+	}
+	b.WriteString(titleStyle.Render("SELECT NODE"))
+	b.WriteString("\n\n")
+
+	// Table header
+	header := fmt.Sprintf("  %-3s %-40s %-8s %s", "#", "NODE", "STATUS", "PODS")
+	b.WriteString(styles.TableHeaderStyle.Render(header))
+	b.WriteString("\n")
+
+	// Calculate visible window for scrolling
+	maxVisible := height - 8 // Reserve space for header, footer, help
+	if maxVisible < 5 {
+		maxVisible = 5
+	}
+
+	startIdx := 0
+	endIdx := len(m.nodes)
+	if len(m.nodes) > maxVisible {
+		startIdx = m.nodeCursor - maxVisible/2
+		if startIdx < 0 {
+			startIdx = 0
+		}
+		endIdx = startIdx + maxVisible
+		if endIdx > len(m.nodes) {
+			endIdx = len(m.nodes)
+			startIdx = endIdx - maxVisible
+			if startIdx < 0 {
+				startIdx = 0
+			}
+		}
+	}
+
+	for i := startIdx; i < endIdx; i++ {
+		node := m.nodes[i]
+		idx := fmt.Sprintf("%d", i+1)
+
+		statusStyle := styles.StatusRunning
+		if node.Status != "Ready" {
+			statusStyle = styles.StatusError
+		}
+
+		cursor := "  "
+		nodeName := styles.Truncate(node.Name, 40)
+		// Pad status to 8 chars before styling to maintain alignment
+		statusPadded := fmt.Sprintf("%-8s", node.Status)
+		if m.nodesPanelActive && i == m.nodeCursor {
+			cursor = styles.CursorStyle.Render("> ")
+			rowStyle := lipgloss.NewStyle().Background(styles.Surface)
+			row := fmt.Sprintf("%s%-3s %-40s %s %d",
+				cursor,
+				idx,
+				nodeName,
+				statusStyle.Render(statusPadded),
+				node.PodCount,
+			)
+			b.WriteString(rowStyle.Render(row))
+		} else {
+			b.WriteString(fmt.Sprintf("%s%-3s %-40s %s %d",
+				cursor,
+				idx,
+				nodeName,
+				statusStyle.Render(statusPadded),
+				node.PodCount,
+			))
+		}
+		b.WriteString("\n")
+	}
+
+	// Fill remaining space to push footer to bottom
+	renderedRows := endIdx - startIdx
+	for i := renderedRows; i < maxVisible; i++ {
+		b.WriteString("\n")
+	}
+
+	// Footer: position and help (same format as namespace panel)
+	b.WriteString("\n\n\n")
+	percent := 0
+	if len(m.nodes) > 0 {
+		percent = (m.nodeCursor + 1) * 100 / len(m.nodes)
+	}
+	b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("%d/%d (%d%%)", m.nodeCursor+1, len(m.nodes), percent)))
+	b.WriteString("\n")
+	b.WriteString(styles.StatusMuted.Render("Tab:switch  Enter:show pods"))
+
+	return b.String()
+}
+
 func (m *Model) handleBack() (tea.Model, tea.Cmd) {
 	switch m.view {
 	case ViewDashboard:
@@ -694,13 +888,27 @@ func (m *Model) handleEnter() (tea.Model, tea.Cmd) {
 					m.loading = true
 					return m, m.loadSecretData(secret.Name)
 				}
+			case components.SectionDockerRegistry:
+				secret := m.navigator.SelectedDockerRegistrySecret()
+				if secret != nil {
+					m.loading = true
+					return m, m.loadSecretData(secret.Name)
+				}
 			}
 
 		case components.ModeNamespace:
+			// If nodes panel is active, load pods for selected node
+			if m.nodesPanelActive && len(m.nodes) > 0 {
+				node := m.nodes[m.nodeCursor]
+				m.loading = true
+				return m, m.loadPodsByNode(node.Name)
+			}
+			// Otherwise, select namespace
 			ns := m.navigator.SelectedNamespace()
 			if ns != "" {
 				m.k8sClient.SetNamespace(ns)
 				m.config.SetLastNamespace(ns)
+				m.selectedNode = "" // Clear node filter
 				m.loading = true
 				// Load all resources (pods, configmaps, secrets)
 				return m, m.loadAllResources()
@@ -741,8 +949,11 @@ func (m *Model) loadInitialData() tea.Cmd {
 			return loadedMsg{err: err}
 		}
 
+		nodes, _ := k8s.ListNodes(ctx, m.k8sClient.Clientset())
+
 		return loadedMsg{
 			namespaces: namespaces,
+			nodes:      nodes,
 		}
 	}
 }
@@ -813,6 +1024,17 @@ func (m *Model) loadSecretData(name string) tea.Cmd {
 	}
 }
 
+func (m *Model) loadPodsByNode(nodeName string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		pods, err := k8s.ListPodsByNode(ctx, m.k8sClient.Clientset(), nodeName)
+		if err != nil {
+			return nodePodLoadedMsg{nodeName: nodeName, err: err}
+		}
+		return nodePodLoadedMsg{nodeName: nodeName, pods: pods}
+	}
+}
+
 func (m *Model) loadDashboardData(pod *k8s.PodInfo) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
@@ -830,6 +1052,12 @@ func (m *Model) loadDashboardData(pod *k8s.PodInfo) tea.Cmd {
 
 		helpers := k8s.AnalyzePodIssues(updatedPod, events)
 
+		// Get node info for the pod's node
+		var node *k8s.NodeInfo
+		if updatedPod.Node != "" {
+			node, _ = k8s.GetNode(ctx, m.k8sClient.Clientset(), updatedPod.Node)
+		}
+
 		return dashboardDataMsg{
 			pod:     updatedPod,
 			logs:    logs,
@@ -837,6 +1065,7 @@ func (m *Model) loadDashboardData(pod *k8s.PodInfo) tea.Cmd {
 			metrics: metrics,
 			related: related,
 			helpers: helpers,
+			node:    node,
 		}
 	}
 }

@@ -49,31 +49,102 @@ type WorkloadInfo struct {
 }
 
 type PodInfo struct {
-	Name         string
-	Namespace    string
-	Node         string
-	Status       string
-	Ready        string
-	Restarts     int32
-	Age          string
-	IP           string
-	Labels       map[string]string
-	Containers   []ContainerInfo
-	Conditions   []corev1.PodCondition
-	Phase        corev1.PodPhase
-	OwnerRef     string
-	OwnerKind    string
+	Name                   string
+	Namespace              string
+	Node                   string
+	Status                 string
+	Ready                  string
+	Restarts               int32
+	Age                    string
+	IP                     string
+	HostIP                 string
+	Labels                 map[string]string
+	Annotations            map[string]string
+	Containers             []ContainerInfo
+	InitContainers         []ContainerInfo
+	Conditions             []corev1.PodCondition
+	Phase                  corev1.PodPhase
+	OwnerRef               string
+	OwnerKind              string
+	QoSClass               string
+	ServiceAccount         string
+	Volumes                []VolumeInfo
+	RestartPolicy          string
+	DNSPolicy              string
+	PriorityClassName      string
+	Priority               *int32
+	NodeSelector           map[string]string
+	Tolerations            []TolerationInfo
+	TerminationGracePeriod int64
+	StartTime              string
 }
 
 type ContainerInfo struct {
-	Name         string
-	Image        string
-	Ready        bool
-	RestartCount int32
-	State        string
-	Reason       string
-	Resources    ResourceRequirements
-	Ports        []int32
+	Name            string
+	Image           string
+	ImagePullPolicy string
+	Ready           bool
+	RestartCount    int32
+	State           string
+	Reason          string
+	Message         string
+	StartedAt       string
+	FinishedAt      string
+	ExitCode        *int32
+	Resources       ResourceRequirements
+	Ports           []ContainerPort
+	LivenessProbe   *ProbeInfo
+	ReadinessProbe  *ProbeInfo
+	StartupProbe    *ProbeInfo
+	SecurityContext *SecurityContextInfo
+	EnvVarCount     int
+	VolumeMounts    []VolumeMountInfo
+}
+
+type ContainerPort struct {
+	Name          string
+	ContainerPort int32
+	Protocol      string
+}
+
+type VolumeMountInfo struct {
+	Name      string
+	MountPath string
+	ReadOnly  bool
+}
+
+type TolerationInfo struct {
+	Key      string
+	Operator string
+	Value    string
+	Effect   string
+}
+
+type ProbeInfo struct {
+	Type            string // HTTP, TCP, Exec
+	Path            string // for HTTP
+	Port            int32
+	Scheme          string // HTTP or HTTPS
+	Command         []string // for Exec
+	InitialDelay    int32
+	Period          int32
+	Timeout         int32
+	SuccessThreshold int32
+	FailureThreshold int32
+}
+
+type SecurityContextInfo struct {
+	RunAsUser    *int64
+	RunAsGroup   *int64
+	RunAsNonRoot *bool
+	Privileged   *bool
+	ReadOnlyRoot *bool
+}
+
+type VolumeInfo struct {
+	Name       string
+	Type       string // ConfigMap, Secret, PVC, EmptyDir, etc
+	Source     string // Name of ConfigMap/Secret/PVC
 }
 
 type ResourceRequirements struct {
@@ -87,6 +158,18 @@ type ConfigMapInfo struct {
 	Name string
 	Age  string
 	Keys int
+}
+
+type NodeInfo struct {
+	Name       string
+	Status     string
+	Roles      string
+	Age        string
+	Version    string
+	InternalIP string
+	PodCount   int
+	CPU        string
+	Memory     string
 }
 
 type SecretInfo struct {
@@ -432,6 +515,178 @@ type SecretData struct {
 	Data      map[string]string // Decoded from base64
 }
 
+// ListNodes returns all nodes in the cluster
+func ListNodes(ctx context.Context, clientset *kubernetes.Clientset) ([]NodeInfo, error) {
+	nodes, err := clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	// Get pod counts per node
+	pods, _ := clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	podCountByNode := make(map[string]int)
+	if pods != nil {
+		for _, p := range pods.Items {
+			if p.Spec.NodeName != "" {
+				podCountByNode[p.Spec.NodeName]++
+			}
+		}
+	}
+
+	var nodeInfos []NodeInfo
+	for _, n := range nodes.Items {
+		// Get node status
+		status := "Unknown"
+		for _, cond := range n.Status.Conditions {
+			if cond.Type == corev1.NodeReady {
+				if cond.Status == corev1.ConditionTrue {
+					status = "Ready"
+				} else {
+					status = "NotReady"
+				}
+				break
+			}
+		}
+
+		// Get node roles
+		var roles []string
+		for label := range n.Labels {
+			if strings.HasPrefix(label, "node-role.kubernetes.io/") {
+				role := strings.TrimPrefix(label, "node-role.kubernetes.io/")
+				if role != "" {
+					roles = append(roles, role)
+				}
+			}
+		}
+		roleStr := strings.Join(roles, ",")
+		if roleStr == "" {
+			roleStr = "<none>"
+		}
+
+		// Get internal IP
+		var internalIP string
+		for _, addr := range n.Status.Addresses {
+			if addr.Type == corev1.NodeInternalIP {
+				internalIP = addr.Address
+				break
+			}
+		}
+
+		// Get CPU and Memory capacity
+		cpu := n.Status.Capacity.Cpu().String()
+		memory := n.Status.Capacity.Memory().String()
+
+		nodeInfos = append(nodeInfos, NodeInfo{
+			Name:       n.Name,
+			Status:     status,
+			Roles:      roleStr,
+			Age:        formatAge(n.CreationTimestamp.Time),
+			Version:    n.Status.NodeInfo.KubeletVersion,
+			InternalIP: internalIP,
+			PodCount:   podCountByNode[n.Name],
+			CPU:        cpu,
+			Memory:     memory,
+		})
+	}
+
+	sort.Slice(nodeInfos, func(i, j int) bool {
+		return nodeInfos[i].Name < nodeInfos[j].Name
+	})
+
+	return nodeInfos, nil
+}
+
+// GetNode returns information about a specific node
+func GetNode(ctx context.Context, clientset *kubernetes.Clientset, nodeName string) (*NodeInfo, error) {
+	n, err := clientset.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	// Get pod count for this node
+	pods, _ := clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{
+		FieldSelector: "spec.nodeName=" + nodeName,
+	})
+	podCount := 0
+	if pods != nil {
+		podCount = len(pods.Items)
+	}
+
+	// Get node status
+	status := "Unknown"
+	for _, cond := range n.Status.Conditions {
+		if cond.Type == corev1.NodeReady {
+			if cond.Status == corev1.ConditionTrue {
+				status = "Ready"
+			} else {
+				status = "NotReady"
+			}
+			break
+		}
+	}
+
+	// Get node roles
+	var roles []string
+	for label := range n.Labels {
+		if strings.HasPrefix(label, "node-role.kubernetes.io/") {
+			role := strings.TrimPrefix(label, "node-role.kubernetes.io/")
+			if role != "" {
+				roles = append(roles, role)
+			}
+		}
+	}
+	roleStr := strings.Join(roles, ",")
+	if roleStr == "" {
+		roleStr = "<none>"
+	}
+
+	// Get internal IP
+	var internalIP string
+	for _, addr := range n.Status.Addresses {
+		if addr.Type == corev1.NodeInternalIP {
+			internalIP = addr.Address
+			break
+		}
+	}
+
+	// Get CPU and Memory capacity
+	cpu := n.Status.Capacity.Cpu().String()
+	memory := n.Status.Capacity.Memory().String()
+
+	return &NodeInfo{
+		Name:       n.Name,
+		Status:     status,
+		Roles:      roleStr,
+		Age:        formatAge(n.CreationTimestamp.Time),
+		Version:    n.Status.NodeInfo.KubeletVersion,
+		InternalIP: internalIP,
+		PodCount:   podCount,
+		CPU:        cpu,
+		Memory:     memory,
+	}, nil
+}
+
+// ListPodsByNode returns all pods running on a specific node
+func ListPodsByNode(ctx context.Context, clientset *kubernetes.Clientset, nodeName string) ([]PodInfo, error) {
+	pods, err := clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{
+		FieldSelector: "spec.nodeName=" + nodeName,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var podInfos []PodInfo
+	for _, p := range pods.Items {
+		podInfos = append(podInfos, podToPodInfo(&p))
+	}
+
+	sort.Slice(podInfos, func(i, j int) bool {
+		return podInfos[i].Namespace + "/" + podInfos[i].Name < podInfos[j].Namespace + "/" + podInfos[j].Name
+	})
+
+	return podInfos, nil
+}
+
 // GetSecret returns full Secret data with decoded values
 func GetSecret(ctx context.Context, clientset *kubernetes.Clientset, namespace, name string) (*SecretData, error) {
 	secret, err := clientset.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
@@ -458,10 +713,18 @@ func podToPodInfo(p *corev1.Pod) PodInfo {
 	var restarts int32
 	var containers []ContainerInfo
 
-	for i, c := range p.Spec.Containers {
+	// Build container status map for quick lookup
+	statusMap := make(map[string]corev1.ContainerStatus)
+	for _, cs := range p.Status.ContainerStatuses {
+		statusMap[cs.Name] = cs
+	}
+
+	for _, c := range p.Spec.Containers {
 		ci := ContainerInfo{
-			Name:  c.Name,
-			Image: c.Image,
+			Name:            c.Name,
+			Image:           c.Image,
+			ImagePullPolicy: string(c.ImagePullPolicy),
+			EnvVarCount:     len(c.Env) + len(c.EnvFrom),
 			Resources: ResourceRequirements{
 				CPURequest:    c.Resources.Requests.Cpu().String(),
 				CPULimit:      c.Resources.Limits.Cpu().String(),
@@ -470,16 +733,81 @@ func podToPodInfo(p *corev1.Pod) PodInfo {
 			},
 		}
 
+		// Parse ports
 		for _, port := range c.Ports {
-			ci.Ports = append(ci.Ports, port.ContainerPort)
+			ci.Ports = append(ci.Ports, ContainerPort{
+				Name:          port.Name,
+				ContainerPort: port.ContainerPort,
+				Protocol:      string(port.Protocol),
+			})
 		}
 
-		if i < len(p.Status.ContainerStatuses) {
-			cs := p.Status.ContainerStatuses[i]
+		// Parse volume mounts
+		for _, vm := range c.VolumeMounts {
+			ci.VolumeMounts = append(ci.VolumeMounts, VolumeMountInfo{
+				Name:      vm.Name,
+				MountPath: vm.MountPath,
+				ReadOnly:  vm.ReadOnly,
+			})
+		}
+
+		// Parse probes
+		ci.LivenessProbe = parseProbe(c.LivenessProbe)
+		ci.ReadinessProbe = parseProbe(c.ReadinessProbe)
+		ci.StartupProbe = parseProbe(c.StartupProbe)
+
+		// Parse security context
+		if c.SecurityContext != nil {
+			ci.SecurityContext = &SecurityContextInfo{
+				RunAsUser:    c.SecurityContext.RunAsUser,
+				RunAsGroup:   c.SecurityContext.RunAsGroup,
+				RunAsNonRoot: c.SecurityContext.RunAsNonRoot,
+				Privileged:   c.SecurityContext.Privileged,
+				ReadOnlyRoot: c.SecurityContext.ReadOnlyRootFilesystem,
+			}
+		}
+
+		// Get status from status map
+		if cs, ok := statusMap[c.Name]; ok {
 			ci.Ready = cs.Ready
 			ci.RestartCount = cs.RestartCount
 			restarts += cs.RestartCount
 
+			if cs.State.Running != nil {
+				ci.State = "Running"
+				ci.StartedAt = cs.State.Running.StartedAt.Format("2006-01-02 15:04:05")
+			} else if cs.State.Waiting != nil {
+				ci.State = "Waiting"
+				ci.Reason = cs.State.Waiting.Reason
+				ci.Message = cs.State.Waiting.Message
+			} else if cs.State.Terminated != nil {
+				ci.State = "Terminated"
+				ci.Reason = cs.State.Terminated.Reason
+				ci.Message = cs.State.Terminated.Message
+				ci.ExitCode = &cs.State.Terminated.ExitCode
+				ci.StartedAt = cs.State.Terminated.StartedAt.Format("2006-01-02 15:04:05")
+				ci.FinishedAt = cs.State.Terminated.FinishedAt.Format("2006-01-02 15:04:05")
+			}
+		}
+
+		containers = append(containers, ci)
+	}
+
+	// Parse init containers
+	var initContainers []ContainerInfo
+	initStatusMap := make(map[string]corev1.ContainerStatus)
+	for _, cs := range p.Status.InitContainerStatuses {
+		initStatusMap[cs.Name] = cs
+	}
+	for _, c := range p.Spec.InitContainers {
+		ci := ContainerInfo{
+			Name:            c.Name,
+			Image:           c.Image,
+			ImagePullPolicy: string(c.ImagePullPolicy),
+		}
+		if cs, ok := initStatusMap[c.Name]; ok {
+			ci.Ready = cs.Ready
+			ci.RestartCount = cs.RestartCount
 			if cs.State.Running != nil {
 				ci.State = "Running"
 			} else if cs.State.Waiting != nil {
@@ -488,10 +816,10 @@ func podToPodInfo(p *corev1.Pod) PodInfo {
 			} else if cs.State.Terminated != nil {
 				ci.State = "Terminated"
 				ci.Reason = cs.State.Terminated.Reason
+				ci.ExitCode = &cs.State.Terminated.ExitCode
 			}
 		}
-
-		containers = append(containers, ci)
+		initContainers = append(initContainers, ci)
 	}
 
 	ready := 0
@@ -507,22 +835,120 @@ func podToPodInfo(p *corev1.Pod) PodInfo {
 		ownerKind = p.OwnerReferences[0].Kind
 	}
 
-	return PodInfo{
-		Name:       p.Name,
-		Namespace:  p.Namespace,
-		Node:       p.Spec.NodeName,
-		Status:     getPodStatus(p),
-		Ready:      fmt.Sprintf("%d/%d", ready, len(p.Spec.Containers)),
-		Restarts:   restarts,
-		Age:        formatAge(p.CreationTimestamp.Time),
-		IP:         p.Status.PodIP,
-		Labels:     p.Labels,
-		Containers: containers,
-		Conditions: p.Status.Conditions,
-		Phase:      p.Status.Phase,
-		OwnerRef:   ownerRef,
-		OwnerKind:  ownerKind,
+	// Parse volumes
+	var volumes []VolumeInfo
+	for _, v := range p.Spec.Volumes {
+		vi := VolumeInfo{Name: v.Name}
+		switch {
+		case v.ConfigMap != nil:
+			vi.Type = "ConfigMap"
+			vi.Source = v.ConfigMap.Name
+		case v.Secret != nil:
+			vi.Type = "Secret"
+			vi.Source = v.Secret.SecretName
+		case v.PersistentVolumeClaim != nil:
+			vi.Type = "PVC"
+			vi.Source = v.PersistentVolumeClaim.ClaimName
+		case v.EmptyDir != nil:
+			vi.Type = "EmptyDir"
+		case v.HostPath != nil:
+			vi.Type = "HostPath"
+			vi.Source = v.HostPath.Path
+		case v.Projected != nil:
+			vi.Type = "Projected"
+		case v.DownwardAPI != nil:
+			vi.Type = "DownwardAPI"
+		default:
+			vi.Type = "Other"
+		}
+		volumes = append(volumes, vi)
 	}
+
+	// Parse tolerations
+	var tolerations []TolerationInfo
+	for _, t := range p.Spec.Tolerations {
+		tolerations = append(tolerations, TolerationInfo{
+			Key:      t.Key,
+			Operator: string(t.Operator),
+			Value:    t.Value,
+			Effect:   string(t.Effect),
+		})
+	}
+
+	// Get termination grace period
+	var terminationGrace int64 = 30 // default
+	if p.Spec.TerminationGracePeriodSeconds != nil {
+		terminationGrace = *p.Spec.TerminationGracePeriodSeconds
+	}
+
+	// Get start time
+	var startTime string
+	if p.Status.StartTime != nil {
+		startTime = p.Status.StartTime.Format("2006-01-02 15:04:05")
+	}
+
+	return PodInfo{
+		Name:                   p.Name,
+		Namespace:              p.Namespace,
+		Node:                   p.Spec.NodeName,
+		Status:                 getPodStatus(p),
+		Ready:                  fmt.Sprintf("%d/%d", ready, len(p.Spec.Containers)),
+		Restarts:               restarts,
+		Age:                    formatAge(p.CreationTimestamp.Time),
+		IP:                     p.Status.PodIP,
+		HostIP:                 p.Status.HostIP,
+		Labels:                 p.Labels,
+		Annotations:            p.Annotations,
+		Containers:             containers,
+		InitContainers:         initContainers,
+		Conditions:             p.Status.Conditions,
+		Phase:                  p.Status.Phase,
+		OwnerRef:               ownerRef,
+		OwnerKind:              ownerKind,
+		QoSClass:               string(p.Status.QOSClass),
+		ServiceAccount:         p.Spec.ServiceAccountName,
+		Volumes:                volumes,
+		RestartPolicy:          string(p.Spec.RestartPolicy),
+		DNSPolicy:              string(p.Spec.DNSPolicy),
+		PriorityClassName:      p.Spec.PriorityClassName,
+		Priority:               p.Spec.Priority,
+		NodeSelector:           p.Spec.NodeSelector,
+		Tolerations:            tolerations,
+		TerminationGracePeriod: terminationGrace,
+		StartTime:              startTime,
+	}
+}
+
+func parseProbe(probe *corev1.Probe) *ProbeInfo {
+	if probe == nil {
+		return nil
+	}
+
+	pi := &ProbeInfo{
+		InitialDelay:     probe.InitialDelaySeconds,
+		Period:           probe.PeriodSeconds,
+		Timeout:          probe.TimeoutSeconds,
+		SuccessThreshold: probe.SuccessThreshold,
+		FailureThreshold: probe.FailureThreshold,
+	}
+
+	if probe.HTTPGet != nil {
+		pi.Type = "HTTP"
+		pi.Path = probe.HTTPGet.Path
+		pi.Port = probe.HTTPGet.Port.IntVal
+		pi.Scheme = string(probe.HTTPGet.Scheme)
+	} else if probe.TCPSocket != nil {
+		pi.Type = "TCP"
+		pi.Port = probe.TCPSocket.Port.IntVal
+	} else if probe.Exec != nil {
+		pi.Type = "Exec"
+		pi.Command = probe.Exec.Command
+	} else if probe.GRPC != nil {
+		pi.Type = "gRPC"
+		pi.Port = probe.GRPC.Port
+	}
+
+	return pi
 }
 
 func getPodStatus(p *corev1.Pod) string {

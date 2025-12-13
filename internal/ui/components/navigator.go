@@ -28,6 +28,7 @@ const (
 	SectionPods PodViewSection = iota
 	SectionConfigMaps
 	SectionSecrets
+	SectionDockerRegistry
 )
 
 type Navigator struct {
@@ -38,7 +39,7 @@ type Navigator struct {
 	namespaces   []string
 	cursor       int
 	section      PodViewSection // Current section in pods view
-	sectionCursors [3]int       // Cursor for each section
+	sectionCursors [4]int       // Cursor for each section (Pods, ConfigMaps, Secrets, DockerRegistry)
 	mode         NavigatorMode
 	width        int
 	height       int
@@ -47,6 +48,7 @@ type Navigator struct {
 	searchQuery  string
 	resourceType k8s.ResourceType
 	keys         keys.KeyMap
+	panelActive  bool           // Whether this panel is active (for namespace mode with nodes)
 }
 
 func NewNavigator() Navigator {
@@ -129,9 +131,17 @@ func (n Navigator) Update(msg tea.Msg) (Navigator, tea.Cmd) {
 
 func (n *Navigator) moveUp() {
 	if n.mode == ModeResources {
-		// Move within current section
+		// Move within current section, or jump to previous section
 		if n.sectionCursors[n.section] > 0 {
 			n.sectionCursors[n.section]--
+		} else {
+			// At top of section, go to previous section (at its last item)
+			n.prevSection()
+			// Move cursor to last item of new section
+			max := n.sectionMaxItems() - 1
+			if max >= 0 {
+				n.sectionCursors[n.section] = max
+			}
 		}
 	} else {
 		if n.cursor > 0 {
@@ -142,10 +152,15 @@ func (n *Navigator) moveUp() {
 
 func (n *Navigator) moveDown() {
 	if n.mode == ModeResources {
-		// Move within current section
+		// Move within current section, or jump to next section
 		max := n.sectionMaxItems() - 1
 		if n.sectionCursors[n.section] < max {
 			n.sectionCursors[n.section]++
+		} else {
+			// At bottom of section, go to next section (at its first item)
+			n.nextSection()
+			// Move cursor to first item of new section
+			n.sectionCursors[n.section] = 0
 		}
 	} else {
 		max := n.maxItems() - 1
@@ -192,11 +207,11 @@ func (n *Navigator) pageDown() {
 }
 
 func (n *Navigator) nextSection() {
-	n.section = (n.section + 1) % 3
+	n.section = (n.section + 1) % 4
 }
 
 func (n *Navigator) prevSection() {
-	n.section = (n.section + 2) % 3
+	n.section = (n.section + 3) % 4
 }
 
 func (n Navigator) sectionMaxItems() int {
@@ -206,9 +221,33 @@ func (n Navigator) sectionMaxItems() int {
 	case SectionConfigMaps:
 		return len(n.configmaps)
 	case SectionSecrets:
-		return len(n.secrets)
+		return len(n.filteredSecrets())
+	case SectionDockerRegistry:
+		return len(n.dockerRegistrySecrets())
 	}
 	return 0
+}
+
+// filteredSecrets returns secrets excluding docker registry type
+func (n Navigator) filteredSecrets() []k8s.SecretInfo {
+	var filtered []k8s.SecretInfo
+	for _, s := range n.secrets {
+		if s.Type != "kubernetes.io/dockerconfigjson" && s.Type != "kubernetes.io/dockercfg" {
+			filtered = append(filtered, s)
+		}
+	}
+	return filtered
+}
+
+// dockerRegistrySecrets returns only docker registry secrets
+func (n Navigator) dockerRegistrySecrets() []k8s.SecretInfo {
+	var filtered []k8s.SecretInfo
+	for _, s := range n.secrets {
+		if s.Type == "kubernetes.io/dockerconfigjson" || s.Type == "kubernetes.io/dockercfg" {
+			filtered = append(filtered, s)
+		}
+	}
+	return filtered
 }
 
 func (n Navigator) maxItems() int {
@@ -288,6 +327,11 @@ func (n Navigator) renderHeader() string {
 	iconStyle := lipgloss.NewStyle().Foreground(styles.Primary).Bold(true)
 	titleStyle := lipgloss.NewStyle().Foreground(styles.Text).Bold(true)
 
+	// Only show active indicator if panel is active
+	if n.mode == ModeNamespace && !n.panelActive {
+		return "  " + titleStyle.Render(title)
+	}
+
 	return iconStyle.Render(icon) + " " + titleStyle.Render(title)
 }
 
@@ -343,10 +387,11 @@ func (n Navigator) renderResources() string {
 	var b strings.Builder
 
 	// Calculate height for each section
-	totalHeight := n.height - 6 // Reserve space for headers
-	podsHeight := totalHeight / 2
-	cmHeight := totalHeight / 4
-	secretsHeight := totalHeight / 4
+	totalHeight := n.height - 8 // Reserve space for headers
+	podsHeight := totalHeight * 40 / 100      // 40%
+	cmHeight := totalHeight * 20 / 100        // 20%
+	secretsHeight := totalHeight * 20 / 100   // 20%
+	dockerHeight := totalHeight * 20 / 100    // 20%
 
 	// PODS Section
 	sectionActive := n.section == SectionPods
@@ -362,11 +407,20 @@ func (n Navigator) renderResources() string {
 	b.WriteString(n.renderConfigMapsTable(cmHeight, sectionActive))
 	b.WriteString("\n\n")
 
-	// SECRETS Section
+	// SECRETS Section (excluding docker registry)
+	filteredSecrets := n.filteredSecrets()
 	sectionActive = n.section == SectionSecrets
-	b.WriteString(n.renderSectionHeader("Secrets", len(n.secrets), sectionActive))
+	b.WriteString(n.renderSectionHeader("Secrets", len(filteredSecrets), sectionActive))
 	b.WriteString("\n")
-	b.WriteString(n.renderSecretsTable(secretsHeight, sectionActive))
+	b.WriteString(n.renderFilteredSecretsTable(secretsHeight, sectionActive, filteredSecrets))
+	b.WriteString("\n\n")
+
+	// DOCKER REGISTRY Section
+	dockerSecrets := n.dockerRegistrySecrets()
+	sectionActive = n.section == SectionDockerRegistry
+	b.WriteString(n.renderSectionHeader("Docker Registry", len(dockerSecrets), sectionActive))
+	b.WriteString("\n")
+	b.WriteString(n.renderDockerRegistryTable(dockerHeight, sectionActive, dockerSecrets))
 
 	return b.String()
 }
@@ -388,7 +442,7 @@ func (n Navigator) renderPodsTable(maxRows int, active bool) string {
 	}
 
 	var b strings.Builder
-	header := fmt.Sprintf("  %-38s %-8s %-18s %-8s %-6s", "NAME", "READY", "STATUS", "RESTARTS", "AGE")
+	header := fmt.Sprintf("  %-38s %-8s %-10s %-8s %-6s", "NAME", "READY", "STATUS", "RESTARTS", "AGE")
 	b.WriteString(styles.TableHeaderStyle.Render(header))
 	b.WriteString("\n")
 
@@ -462,7 +516,11 @@ func (n Navigator) renderConfigMapsTable(maxRows int, active bool) string {
 }
 
 func (n Navigator) renderSecretsTable(maxRows int, active bool) string {
-	if len(n.secrets) == 0 {
+	return n.renderFilteredSecretsTable(maxRows, active, n.secrets)
+}
+
+func (n Navigator) renderFilteredSecretsTable(maxRows int, active bool, secrets []k8s.SecretInfo) string {
+	if len(secrets) == 0 {
 		return styles.StatusMuted.Render("  No secrets found")
 	}
 
@@ -474,29 +532,82 @@ func (n Navigator) renderSecretsTable(maxRows int, active bool) string {
 	cursor := n.sectionCursors[SectionSecrets]
 	visibleRows := maxRows - 1
 
-	startIdx, endIdx := n.calculateVisibleWindow(cursor, len(n.secrets), visibleRows)
+	startIdx, endIdx := n.calculateVisibleWindow(cursor, len(secrets), visibleRows)
 
 	if startIdx > 0 {
 		b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("  ... %d more above", startIdx)))
 		b.WriteString("\n")
 		visibleRows--
 		endIdx = startIdx + visibleRows
-		if endIdx > len(n.secrets) {
-			endIdx = len(n.secrets)
+		if endIdx > len(secrets) {
+			endIdx = len(secrets)
 		}
 	}
 
 	for i := startIdx; i < endIdx; i++ {
 		selected := active && i == cursor
-		b.WriteString(n.renderSecretRow(n.secrets[i], selected))
+		b.WriteString(n.renderSecretRow(secrets[i], selected))
 		b.WriteString("\n")
 	}
 
-	if endIdx < len(n.secrets) {
-		b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("  ... and %d more", len(n.secrets)-endIdx)))
+	if endIdx < len(secrets) {
+		b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("  ... and %d more", len(secrets)-endIdx)))
 	}
 
 	return b.String()
+}
+
+func (n Navigator) renderDockerRegistryTable(maxRows int, active bool, secrets []k8s.SecretInfo) string {
+	if len(secrets) == 0 {
+		return styles.StatusMuted.Render("  No docker registry secrets found")
+	}
+
+	var b strings.Builder
+	header := fmt.Sprintf("  %-50s %-6s", "NAME", "AGE")
+	b.WriteString(styles.TableHeaderStyle.Render(header))
+	b.WriteString("\n")
+
+	cursor := n.sectionCursors[SectionDockerRegistry]
+	visibleRows := maxRows - 1
+
+	startIdx, endIdx := n.calculateVisibleWindow(cursor, len(secrets), visibleRows)
+
+	if startIdx > 0 {
+		b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("  ... %d more above", startIdx)))
+		b.WriteString("\n")
+		visibleRows--
+		endIdx = startIdx + visibleRows
+		if endIdx > len(secrets) {
+			endIdx = len(secrets)
+		}
+	}
+
+	for i := startIdx; i < endIdx; i++ {
+		selected := active && i == cursor
+		b.WriteString(n.renderDockerRegistryRow(secrets[i], selected))
+		b.WriteString("\n")
+	}
+
+	if endIdx < len(secrets) {
+		b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("  ... and %d more", len(secrets)-endIdx)))
+	}
+
+	return b.String()
+}
+
+func (n Navigator) renderDockerRegistryRow(s k8s.SecretInfo, selected bool) string {
+	cursorStr := "  "
+	if selected {
+		cursorStr = styles.CursorStyle.Render("> ")
+	}
+
+	name := styles.Truncate(s.Name, 50)
+
+	if selected {
+		rowStyle := lipgloss.NewStyle().Background(styles.Surface)
+		return rowStyle.Render(fmt.Sprintf("%s%-50s %-6s", cursorStr, name, s.Age))
+	}
+	return fmt.Sprintf("%s%-50s %-6s", cursorStr, name, s.Age)
 }
 
 func (n Navigator) renderConfigMapRow(cm k8s.ConfigMapInfo, selected bool) string {
@@ -539,19 +650,24 @@ func (n Navigator) renderPodRow(p k8s.PodInfo, selected bool) string {
 	name := styles.Truncate(p.Name, 38)
 	statusStyle := styles.GetStatusStyle(p.Status)
 
-	restarts := fmt.Sprintf("%d", p.Restarts)
+	// Pad values before styling to maintain alignment
+	statusPadded := fmt.Sprintf("%-10s", p.Status)
+	restartsPadded := fmt.Sprintf("%-8d", p.Restarts)
+
+	styledStatus := statusStyle.Render(statusPadded)
+	styledRestarts := restartsPadded
 	if p.Restarts > 0 {
-		restarts = styles.StatusError.Render(restarts)
+		styledRestarts = styles.StatusError.Render(restartsPadded)
 	}
 
 	if selected {
 		rowStyle := lipgloss.NewStyle().Background(styles.Surface)
-		return rowStyle.Render(fmt.Sprintf("%s%-38s %-8s %-18s %-8s %-6s",
-			cursor, name, p.Ready, statusStyle.Render(p.Status), restarts, p.Age))
+		return rowStyle.Render(fmt.Sprintf("%s%-38s %-8s %s %s %-6s",
+			cursor, name, p.Ready, styledStatus, styledRestarts, p.Age))
 	}
 
-	return fmt.Sprintf("%s%-38s %-8s %-18s %-8s %-6s",
-		cursor, name, p.Ready, statusStyle.Render(p.Status), restarts, p.Age)
+	return fmt.Sprintf("%s%-38s %-8s %s %s %-6s",
+		cursor, name, p.Ready, styledStatus, styledRestarts, p.Age)
 }
 
 func (n Navigator) renderNamespaces() string {
@@ -776,11 +892,23 @@ func (n *Navigator) SetConfigMaps(cms []k8s.ConfigMapInfo) {
 
 func (n *Navigator) SetSecrets(secrets []k8s.SecretInfo) {
 	n.secrets = secrets
-	if n.sectionCursors[SectionSecrets] >= len(secrets) {
-		n.sectionCursors[SectionSecrets] = len(secrets) - 1
+
+	// Handle regular secrets cursor
+	filteredCount := len(n.filteredSecrets())
+	if n.sectionCursors[SectionSecrets] >= filteredCount {
+		n.sectionCursors[SectionSecrets] = filteredCount - 1
 	}
 	if n.sectionCursors[SectionSecrets] < 0 {
 		n.sectionCursors[SectionSecrets] = 0
+	}
+
+	// Handle docker registry secrets cursor
+	dockerCount := len(n.dockerRegistrySecrets())
+	if n.sectionCursors[SectionDockerRegistry] >= dockerCount {
+		n.sectionCursors[SectionDockerRegistry] = dockerCount - 1
+	}
+	if n.sectionCursors[SectionDockerRegistry] < 0 {
+		n.sectionCursors[SectionDockerRegistry] = 0
 	}
 }
 
@@ -801,6 +929,10 @@ func (n *Navigator) SetMode(mode NavigatorMode) {
 func (n *Navigator) SetSize(width, height int) {
 	n.width = width
 	n.height = height
+}
+
+func (n *Navigator) SetPanelActive(active bool) {
+	n.panelActive = active
 }
 
 func (n Navigator) SelectedWorkload() *k8s.WorkloadInfo {
@@ -829,9 +961,19 @@ func (n Navigator) SelectedConfigMap() *k8s.ConfigMapInfo {
 }
 
 func (n Navigator) SelectedSecret() *k8s.SecretInfo {
+	secrets := n.filteredSecrets()
 	cursor := n.sectionCursors[SectionSecrets]
-	if cursor >= 0 && cursor < len(n.secrets) {
-		return &n.secrets[cursor]
+	if cursor >= 0 && cursor < len(secrets) {
+		return &secrets[cursor]
+	}
+	return nil
+}
+
+func (n Navigator) SelectedDockerRegistrySecret() *k8s.SecretInfo {
+	secrets := n.dockerRegistrySecrets()
+	cursor := n.sectionCursors[SectionDockerRegistry]
+	if cursor >= 0 && cursor < len(secrets) {
+		return &secrets[cursor]
 	}
 	return nil
 }

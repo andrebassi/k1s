@@ -1,6 +1,7 @@
 package views
 
 import (
+	"fmt"
 	"os/exec"
 	"strings"
 
@@ -24,6 +25,7 @@ const (
 
 type Dashboard struct {
 	pod           *k8s.PodInfo
+	related       *k8s.RelatedResources
 	logs          components.LogsPanel
 	events        components.EventsPanel
 	metrics       components.MetricsPanel
@@ -313,11 +315,90 @@ func (d Dashboard) Update(msg tea.Msg) (Dashboard, tea.Cmd) {
 			d.fullscreen = !d.fullscreen
 			return d, nil
 
+		// Arrow key navigation between panels (2x2 grid)
+		// Layout: Logs(0) | Events(1)
+		//         Metrics(2) | Manifest(3)
+		case msg.String() == "left":
+			switch d.focus {
+			case FocusEvents:
+				d.focus = FocusLogs
+			case FocusManifest:
+				d.focus = FocusMetrics
+			case FocusLogs:
+				d.focus = FocusEvents // wrap
+			case FocusMetrics:
+				d.focus = FocusManifest // wrap
+			}
+			return d, nil
+
+		case msg.String() == "right":
+			switch d.focus {
+			case FocusLogs:
+				d.focus = FocusEvents
+			case FocusMetrics:
+				d.focus = FocusManifest
+			case FocusEvents:
+				d.focus = FocusLogs // wrap
+			case FocusManifest:
+				d.focus = FocusMetrics // wrap
+			}
+			return d, nil
+
+		case msg.String() == "up":
+			switch d.focus {
+			case FocusMetrics:
+				d.focus = FocusLogs
+			case FocusManifest:
+				d.focus = FocusEvents
+			case FocusLogs:
+				d.focus = FocusMetrics // wrap
+			case FocusEvents:
+				d.focus = FocusManifest // wrap
+			}
+			return d, nil
+
+		case msg.String() == "down":
+			switch d.focus {
+			case FocusLogs:
+				d.focus = FocusMetrics
+			case FocusEvents:
+				d.focus = FocusManifest
+			case FocusMetrics:
+				d.focus = FocusLogs // wrap
+			case FocusManifest:
+				d.focus = FocusEvents // wrap
+			}
+			return d, nil
+
 		case key.Matches(msg, d.keys.Enter):
 			// Enter on Logs or Events panel toggles fullscreen
 			if d.focus == FocusLogs || d.focus == FocusEvents {
 				d.fullscreen = !d.fullscreen
 				return d, nil
+			}
+			// Enter on Resource Usage panel shows detailed resource info
+			if d.focus == FocusMetrics && d.pod != nil {
+				content := d.renderDetailedResources()
+				d.resultViewer.Show("Resource Details: "+d.pod.Name, content, d.width-4, d.height-4)
+				return d, nil
+			}
+			// Enter on Pod Details panel shows kubectl describe
+			if d.focus == FocusManifest && d.pod != nil {
+				d.statusMsg = "Loading describe..."
+				podName := d.pod.Name
+				namespace := d.namespace
+				return d, func() tea.Msg {
+					cmdStr := "kubectl describe pod " + podName + " -n " + namespace
+					c := exec.Command("sh", "-c", cmdStr)
+					output, err := c.CombinedOutput()
+					if err != nil {
+						return DescribeOutputMsg{Err: err}
+					}
+					return DescribeOutputMsg{
+						Title:   "Pod: " + podName,
+						Content: string(output),
+					}
+				}
 			}
 		}
 	}
@@ -507,7 +588,12 @@ func (d *Dashboard) SetMetrics(metrics *k8s.PodMetrics) {
 }
 
 func (d *Dashboard) SetRelated(related *k8s.RelatedResources) {
+	d.related = related
 	d.manifest.SetRelated(related)
+}
+
+func (d *Dashboard) SetNode(node *k8s.NodeInfo) {
+	d.metrics.SetNode(node)
 }
 
 func (d *Dashboard) SetHelpers(helpers []k8s.DebugHelper) {
@@ -576,4 +662,308 @@ func (d Dashboard) IsFullscreen() bool {
 
 func (d *Dashboard) CloseFullscreen() {
 	d.fullscreen = false
+}
+
+func (d Dashboard) renderDetailedResources() string {
+	if d.pod == nil {
+		return "No pod selected"
+	}
+
+	var b strings.Builder
+
+	// Pod-level info
+	b.WriteString(styles.SubtitleStyle.Render("Pod Info"))
+	b.WriteString("\n")
+	b.WriteString(fmt.Sprintf("  %-22s %s\n", "QoS Class:", d.pod.QoSClass))
+	b.WriteString(fmt.Sprintf("  %-22s %s\n", "Service Account:", d.pod.ServiceAccount))
+	b.WriteString(fmt.Sprintf("  %-22s %s\n", "Restart Policy:", d.pod.RestartPolicy))
+	b.WriteString(fmt.Sprintf("  %-22s %s\n", "DNS Policy:", d.pod.DNSPolicy))
+	b.WriteString(fmt.Sprintf("  %-22s %ds\n", "Termination Grace:", d.pod.TerminationGracePeriod))
+	if d.pod.PriorityClassName != "" {
+		b.WriteString(fmt.Sprintf("  %-22s %s\n", "Priority Class:", d.pod.PriorityClassName))
+	}
+	if d.pod.Priority != nil {
+		b.WriteString(fmt.Sprintf("  %-22s %d\n", "Priority:", *d.pod.Priority))
+	}
+	b.WriteString("\n")
+
+	// Network info
+	b.WriteString(styles.SubtitleStyle.Render("Network"))
+	b.WriteString("\n")
+	b.WriteString(fmt.Sprintf("  %-22s %s\n", "Pod IP:", d.pod.IP))
+	b.WriteString(fmt.Sprintf("  %-22s %s\n", "Host IP:", d.pod.HostIP))
+	b.WriteString(fmt.Sprintf("  %-22s %s\n", "Node:", d.pod.Node))
+	if d.pod.StartTime != "" {
+		b.WriteString(fmt.Sprintf("  %-22s %s\n", "Started:", d.pod.StartTime))
+	}
+	b.WriteString("\n")
+
+	// Services (right after Network)
+	if d.related != nil && len(d.related.Services) > 0 {
+		b.WriteString(styles.SubtitleStyle.Render("Services"))
+		b.WriteString("\n")
+		for _, svc := range d.related.Services {
+			typeStyle := styles.StatusMuted
+			if svc.Type == "LoadBalancer" {
+				typeStyle = styles.StatusRunning
+			} else if svc.Type == "NodePort" {
+				typeStyle = styles.LogContainer
+			}
+			b.WriteString(fmt.Sprintf("  • %s\n", styles.LogContainer.Render(svc.Name)))
+			b.WriteString(fmt.Sprintf("    Type:       %s\n", typeStyle.Render(svc.Type)))
+			b.WriteString(fmt.Sprintf("    ClusterIP:  %s\n", svc.ClusterIP))
+			b.WriteString(fmt.Sprintf("    Ports:      %s\n", svc.Ports))
+			b.WriteString(fmt.Sprintf("    Endpoints:  %d\n", svc.Endpoints))
+		}
+		b.WriteString("\n")
+	}
+
+	// Ingresses (after Services)
+	if d.related != nil && len(d.related.Ingresses) > 0 {
+		b.WriteString(styles.SubtitleStyle.Render("Ingresses"))
+		b.WriteString("\n")
+		for _, ing := range d.related.Ingresses {
+			b.WriteString(fmt.Sprintf("  • %s\n", styles.LogContainer.Render(ing.Name)))
+			b.WriteString(fmt.Sprintf("    Hosts:  %s\n", ing.Hosts))
+			b.WriteString(fmt.Sprintf("    Paths:  %s\n", ing.Paths))
+		}
+		b.WriteString("\n")
+	}
+
+	// Node Selector
+	if len(d.pod.NodeSelector) > 0 {
+		b.WriteString(styles.SubtitleStyle.Render("Node Selector"))
+		b.WriteString("\n")
+		for k, v := range d.pod.NodeSelector {
+			b.WriteString(fmt.Sprintf("  %s: %s\n", k, v))
+		}
+		b.WriteString("\n")
+	}
+
+	// Tolerations
+	if len(d.pod.Tolerations) > 0 {
+		b.WriteString(styles.SubtitleStyle.Render("Tolerations"))
+		b.WriteString("\n")
+		for _, t := range d.pod.Tolerations {
+			if t.Key == "" {
+				b.WriteString("  • (all taints)\n")
+			} else {
+				tolStr := fmt.Sprintf("  • %s", t.Key)
+				if t.Value != "" {
+					tolStr += "=" + t.Value
+				}
+				if t.Effect != "" {
+					tolStr += " :" + t.Effect
+				}
+				b.WriteString(tolStr + "\n")
+			}
+		}
+		b.WriteString("\n")
+	}
+
+	// Init Containers
+	if len(d.pod.InitContainers) > 0 {
+		b.WriteString(styles.SubtitleStyle.Render("Init Containers"))
+		b.WriteString("\n")
+		for _, c := range d.pod.InitContainers {
+			stateStyle := styles.GetStatusStyle(c.State)
+			state := c.State
+			if c.Reason != "" {
+				state += " (" + c.Reason + ")"
+			}
+			b.WriteString(fmt.Sprintf("  • %s: %s\n", c.Name, stateStyle.Render(state)))
+			b.WriteString(fmt.Sprintf("    Image: %s\n", c.Image))
+		}
+		b.WriteString("\n")
+	}
+
+	// Container details
+	for _, c := range d.pod.Containers {
+		b.WriteString(styles.LogContainer.Render("Container: " + c.Name))
+		b.WriteString("\n")
+		b.WriteString(fmt.Sprintf("  %-20s %s\n", "Image:", c.Image))
+		b.WriteString(fmt.Sprintf("  %-20s %s\n", "Pull Policy:", c.ImagePullPolicy))
+		stateStyle := styles.GetStatusStyle(c.State)
+		b.WriteString(fmt.Sprintf("  %-20s %s\n", "State:", stateStyle.Render(c.State)))
+		if c.StartedAt != "" {
+			b.WriteString(fmt.Sprintf("  %-20s %s\n", "Started:", c.StartedAt))
+		}
+		if c.ExitCode != nil {
+			b.WriteString(fmt.Sprintf("  %-20s %d\n", "Exit Code:", *c.ExitCode))
+		}
+		b.WriteString(fmt.Sprintf("  %-20s %d\n", "Restarts:", c.RestartCount))
+		b.WriteString(fmt.Sprintf("  %-20s %d\n", "Env Vars:", c.EnvVarCount))
+		b.WriteString("\n")
+
+		// Resources
+		b.WriteString(styles.SubtitleStyle.Render("  Resources"))
+		b.WriteString("\n")
+		b.WriteString(fmt.Sprintf("    %-18s %s\n", "CPU Request:", formatResource(c.Resources.CPURequest)))
+		b.WriteString(fmt.Sprintf("    %-18s %s\n", "CPU Limit:", formatResource(c.Resources.CPULimit)))
+		b.WriteString(fmt.Sprintf("    %-18s %s\n", "Mem Request:", formatResource(c.Resources.MemoryRequest)))
+		b.WriteString(fmt.Sprintf("    %-18s %s\n", "Mem Limit:", formatResource(c.Resources.MemoryLimit)))
+		b.WriteString("\n")
+
+		// Ports
+		if len(c.Ports) > 0 {
+			b.WriteString(styles.SubtitleStyle.Render("  Ports"))
+			b.WriteString("\n")
+			for _, p := range c.Ports {
+				portStr := fmt.Sprintf("%d/%s", p.ContainerPort, p.Protocol)
+				if p.Name != "" {
+					portStr = p.Name + ": " + portStr
+				}
+				b.WriteString("    • " + portStr + "\n")
+			}
+			b.WriteString("\n")
+		}
+
+		// Probes
+		b.WriteString(styles.SubtitleStyle.Render("  Probes"))
+		b.WriteString("\n")
+		if c.LivenessProbe != nil {
+			b.WriteString("    Liveness:   " + formatProbe(c.LivenessProbe) + "\n")
+		} else {
+			b.WriteString("    Liveness:   " + styles.StatusMuted.Render("not configured") + "\n")
+		}
+		if c.ReadinessProbe != nil {
+			b.WriteString("    Readiness:  " + formatProbe(c.ReadinessProbe) + "\n")
+		} else {
+			b.WriteString("    Readiness:  " + styles.StatusMuted.Render("not configured") + "\n")
+		}
+		if c.StartupProbe != nil {
+			b.WriteString("    Startup:    " + formatProbe(c.StartupProbe) + "\n")
+		}
+		b.WriteString("\n")
+
+		// Security Context
+		b.WriteString(styles.SubtitleStyle.Render("  Security Context"))
+		b.WriteString("\n")
+		if c.SecurityContext != nil {
+			hasContent := false
+			if c.SecurityContext.RunAsUser != nil {
+				b.WriteString(fmt.Sprintf("    %-18s %d\n", "Run As User:", *c.SecurityContext.RunAsUser))
+				hasContent = true
+			}
+			if c.SecurityContext.RunAsGroup != nil {
+				b.WriteString(fmt.Sprintf("    %-18s %d\n", "Run As Group:", *c.SecurityContext.RunAsGroup))
+				hasContent = true
+			}
+			if c.SecurityContext.RunAsNonRoot != nil && *c.SecurityContext.RunAsNonRoot {
+				b.WriteString(fmt.Sprintf("    %-18s %s\n", "Run As Non-Root:", styles.StatusRunning.Render("yes")))
+				hasContent = true
+			}
+			if c.SecurityContext.Privileged != nil && *c.SecurityContext.Privileged {
+				b.WriteString(fmt.Sprintf("    %-18s %s\n", "Privileged:", styles.StatusError.Render("YES")))
+				hasContent = true
+			}
+			if c.SecurityContext.ReadOnlyRoot != nil && *c.SecurityContext.ReadOnlyRoot {
+				b.WriteString(fmt.Sprintf("    %-18s %s\n", "Read-Only Root:", styles.StatusRunning.Render("yes")))
+				hasContent = true
+			}
+			if !hasContent {
+				b.WriteString("    (default)\n")
+			}
+		} else {
+			b.WriteString("    (default)\n")
+		}
+		b.WriteString("\n")
+
+		// Volume Mounts
+		if len(c.VolumeMounts) > 0 {
+			b.WriteString(styles.SubtitleStyle.Render("  Volume Mounts"))
+			b.WriteString("\n")
+			for _, vm := range c.VolumeMounts {
+				ro := ""
+				if vm.ReadOnly {
+					ro = " (ro)"
+				}
+				b.WriteString(fmt.Sprintf("    • %s → %s%s\n", vm.Name, vm.MountPath, ro))
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	// Volumes
+	if len(d.pod.Volumes) > 0 {
+		b.WriteString(styles.SubtitleStyle.Render("Volumes"))
+		b.WriteString("\n")
+		for _, v := range d.pod.Volumes {
+			if v.Source != "" {
+				b.WriteString(fmt.Sprintf("  • %s (%s: %s)\n", v.Name, v.Type, v.Source))
+			} else {
+				b.WriteString(fmt.Sprintf("  • %s (%s)\n", v.Name, v.Type))
+			}
+		}
+		b.WriteString("\n")
+	}
+
+	// Related ConfigMaps and Secrets
+	if d.related != nil {
+		// ConfigMaps used
+		if len(d.related.ConfigMaps) > 0 {
+			b.WriteString(styles.SubtitleStyle.Render("ConfigMaps Used"))
+			b.WriteString("\n")
+			for _, cm := range d.related.ConfigMaps {
+				b.WriteString(fmt.Sprintf("  • %s\n", cm))
+			}
+			b.WriteString("\n")
+		}
+
+		// Secrets used
+		if len(d.related.Secrets) > 0 {
+			b.WriteString(styles.SubtitleStyle.Render("Secrets Used"))
+			b.WriteString("\n")
+			for _, s := range d.related.Secrets {
+				b.WriteString(fmt.Sprintf("  • %s\n", s))
+			}
+		}
+	}
+
+	return b.String()
+}
+
+func formatResource(v string) string {
+	if v == "" || v == "0" {
+		return styles.StatusMuted.Render("not set")
+	}
+	return v
+}
+
+func formatProbe(p *k8s.ProbeInfo) string {
+	if p == nil {
+		return "not configured"
+	}
+
+	var result string
+	switch p.Type {
+	case "HTTP":
+		scheme := p.Scheme
+		if scheme == "" {
+			scheme = "HTTP"
+		}
+		result = scheme + " " + p.Path + " :" + formatInt32(p.Port)
+	case "TCP":
+		result = "TCP :" + formatInt32(p.Port)
+	case "Exec":
+		result = "Exec: " + strings.Join(p.Command, " ")
+	case "gRPC":
+		result = "gRPC :" + formatInt32(p.Port)
+	default:
+		result = p.Type
+	}
+
+	result += " (delay:" + formatInt32(p.InitialDelay) + "s"
+	result += " period:" + formatInt32(p.Period) + "s"
+	result += " fail:" + formatInt32(p.FailureThreshold) + ")"
+
+	return result
+}
+
+func formatInt32(v int32) string {
+	return fmt.Sprintf("%d", v)
+}
+
+func formatInt64(v int64) string {
+	return fmt.Sprintf("%d", v)
 }
