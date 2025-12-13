@@ -118,20 +118,6 @@ func (l LogsPanel) Update(msg tea.Msg) (LogsPanel, tea.Cmd) {
 			l.searching = true
 			l.searchInput.Focus()
 			return l, textinput.Blink
-		default:
-			// Auto-start search when typing letters/numbers (like vim)
-			key := msg.String()
-			if len(key) == 1 && ((key[0] >= 'a' && key[0] <= 'z') || (key[0] >= 'A' && key[0] <= 'Z') || (key[0] >= '0' && key[0] <= '9')) {
-				// Exclude keys that have special meaning
-				if key != "c" && key != "f" && key != "e" && key != "g" && key != "G" && key != "P" && key != "T" && key != "j" && key != "k" && key != "q" {
-					l.searching = true
-					l.searchInput.Focus()
-					l.searchInput.SetValue(key)
-					l.filter = key
-					l.updateContent()
-					return l, textinput.Blink
-				}
-			}
 		case "c":
 			// Clear filter
 			l.filter = ""
@@ -453,6 +439,14 @@ func (l LogsPanel) ErrorCount() int {
 
 func (l LogsPanel) IsSearching() bool {
 	return l.searching
+}
+
+func (l *LogsPanel) ClearSearch() {
+	l.searching = false
+	l.filter = ""
+	l.searchInput.SetValue("")
+	l.searchInput.Blur()
+	l.updateContent()
 }
 
 func (l LogsPanel) Filter() string {

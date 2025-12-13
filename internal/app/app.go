@@ -50,6 +50,8 @@ type Model struct {
 	selectedNode       string // Node name for filtering pods
 	nodesPanelActive   bool   // True when nodes panel is focused (right side)
 	statusMsg          string // Status message for navigator view
+	nodeSearching      bool   // True when searching nodes
+	nodeSearchQuery    string // Node search query
 
 	// State tracking for reactive log fetching
 	lastShowPrevious bool
@@ -454,37 +456,74 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
-		// Clear status message on key press in navigator
-		if m.view == ViewNavigator {
-			m.statusMsg = ""
-		}
-
-		// When navigator is searching, only handle esc/enter at app level
-		// All other keys go to the search input
+		// When navigator is searching, handle keys appropriately
 		if m.view == ViewNavigator && m.navigator.IsSearching() {
-			switch msg.String() {
-			case "esc":
-				m.navigator.CloseSearch()
-				return m, nil
-			case "enter":
-				m.navigator.CloseSearch()
-				return m, nil
-			case "ctrl+c":
+			if msg.String() == "ctrl+c" {
 				m.saveConfig()
 				return m, tea.Quit
-			default:
-				// Pass all other keys to navigator for search input
+			}
+			// Tab or Enter: exit search mode, keep filter, allow navigation
+			if msg.Type == tea.KeyTab || msg.String() == "tab" || msg.Type == tea.KeyEnter || msg.String() == "enter" {
 				m.navigator, cmd = m.navigator.Update(msg)
+				return m, cmd
+			}
+			// Pass all other keys to navigator for typing
+			m.navigator, cmd = m.navigator.Update(msg)
+			return m, cmd
+		}
+
+		// When dashboard is in fullscreen logs/events mode, pass search-related keys directly
+		if m.view == ViewDashboard && (m.dashboard.IsFullscreenLogs() || m.dashboard.IsFullscreenEvents()) {
+			key := msg.String()
+			// Pass / to start search, and letters/numbers when already searching
+			if key == "/" {
+				m.dashboard, cmd = m.dashboard.Update(msg)
 				return m, cmd
 			}
 		}
 
-		// When dashboard is in fullscreen logs mode, pass letter/number keys directly for search
-		if m.view == ViewDashboard && m.dashboard.IsFullscreenLogs() {
-			key := msg.String()
-			if len(key) == 1 && ((key[0] >= 'a' && key[0] <= 'z') || (key[0] >= 'A' && key[0] <= 'Z') || (key[0] >= '0' && key[0] <= '9')) {
-				m.dashboard, cmd = m.dashboard.Update(msg)
-				return m, cmd
+		// Handle node search mode
+		if m.view == ViewNavigator && m.navigator.Mode() == components.ModeNamespace && m.nodesPanelActive && m.nodeSearching {
+			switch msg.String() {
+			case "esc":
+				// Esc clears search or exits search mode
+				if m.nodeSearchQuery != "" {
+					m.nodeSearchQuery = ""
+					m.nodeCursor = 0
+				} else {
+					m.nodeSearching = false
+				}
+				return m, nil
+			case "tab":
+				// Tab: exit search mode, keep filter, allow navigation
+				m.nodeSearching = false
+				return m, nil
+			case "enter":
+				// Enter: exit search and select the node
+				m.nodeSearching = false
+				return m.handleEnter()
+			case "backspace":
+				if len(m.nodeSearchQuery) > 0 {
+					m.nodeSearchQuery = m.nodeSearchQuery[:len(m.nodeSearchQuery)-1]
+					m.nodeCursor = 0
+				}
+				return m, nil
+			default:
+				k := msg.String()
+				if len(k) == 1 {
+					m.nodeSearchQuery += k
+					m.nodeCursor = 0
+				}
+				return m, nil
+			}
+		}
+
+		// Start node search with / key
+		if m.view == ViewNavigator && m.navigator.Mode() == components.ModeNamespace && m.nodesPanelActive && !m.nodeSearching {
+			if msg.String() == "/" {
+				m.nodeSearching = true
+				m.nodeSearchQuery = ""
+				return m, nil
 			}
 		}
 
@@ -548,7 +587,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Down):
 			// Handle node panel navigation
 			if m.view == ViewNavigator && m.navigator.Mode() == components.ModeNamespace && m.nodesPanelActive {
-				if m.nodeCursor < len(m.nodes)-1 {
+				filteredNodes := m.filteredNodes()
+				if m.nodeCursor < len(filteredNodes)-1 {
 					m.nodeCursor++
 				}
 				return m, nil
@@ -663,6 +703,7 @@ func (m Model) View() string {
 	footer := ctxStyle.Render("ctx:") + ctxValueStyle.Render(m.k8sClient.Context()) +
 		ctxStyle.Render(" | ns:") + ctxValueStyle.Render(m.k8sClient.Namespace()) +
 		ctxStyle.Render(" | res:") + ctxValueStyle.Render(string(m.navigator.ResourceType()))
+
 
 	// Calculate dimensions for content box
 	footerHeight := 1
@@ -779,6 +820,9 @@ func (m Model) View() string {
 func (m Model) renderNodesPanel(width, height int) string {
 	var b strings.Builder
 
+	// Get filtered nodes
+	nodes := m.filteredNodes()
+
 	// Header
 	iconStyle := lipgloss.NewStyle().Foreground(styles.Primary).Bold(true)
 	titleStyle := lipgloss.NewStyle().Foreground(styles.Text).Bold(true)
@@ -789,6 +833,15 @@ func (m Model) renderNodesPanel(width, height int) string {
 		b.WriteString("  ")
 	}
 	b.WriteString(titleStyle.Render("SELECT NODE"))
+
+	// Show search query if searching
+	if m.nodeSearching || m.nodeSearchQuery != "" {
+		filterStyle := lipgloss.NewStyle().Foreground(styles.Warning).Bold(true)
+		b.WriteString(filterStyle.Render(fmt.Sprintf("  [%s]", m.nodeSearchQuery)))
+		if m.nodeSearching {
+			b.WriteString(styles.CursorStyle.Render("_"))
+		}
+	}
 	b.WriteString("\n\n")
 
 	// Table header
@@ -803,15 +856,15 @@ func (m Model) renderNodesPanel(width, height int) string {
 	}
 
 	startIdx := 0
-	endIdx := len(m.nodes)
-	if len(m.nodes) > maxVisible {
+	endIdx := len(nodes)
+	if len(nodes) > maxVisible {
 		startIdx = m.nodeCursor - maxVisible/2
 		if startIdx < 0 {
 			startIdx = 0
 		}
 		endIdx = startIdx + maxVisible
-		if endIdx > len(m.nodes) {
-			endIdx = len(m.nodes)
+		if endIdx > len(nodes) {
+			endIdx = len(nodes)
 			startIdx = endIdx - maxVisible
 			if startIdx < 0 {
 				startIdx = 0
@@ -820,7 +873,7 @@ func (m Model) renderNodesPanel(width, height int) string {
 	}
 
 	for i := startIdx; i < endIdx; i++ {
-		node := m.nodes[i]
+		node := nodes[i]
 		idx := fmt.Sprintf("%d", i+1)
 
 		statusStyle := styles.StatusRunning
@@ -864,10 +917,10 @@ func (m Model) renderNodesPanel(width, height int) string {
 	// Footer: position and help (same format as namespace panel)
 	b.WriteString("\n\n\n")
 	percent := 0
-	if len(m.nodes) > 0 {
-		percent = (m.nodeCursor + 1) * 100 / len(m.nodes)
+	if len(nodes) > 0 {
+		percent = (m.nodeCursor + 1) * 100 / len(nodes)
 	}
-	b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("%d/%d (%d%%)", m.nodeCursor+1, len(m.nodes), percent)))
+	b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("%d/%d (%d%%)", m.nodeCursor+1, len(nodes), percent)))
 	b.WriteString("\n")
 	b.WriteString(styles.StatusMuted.Render("Tab:switch  Enter:show pods"))
 
@@ -962,10 +1015,15 @@ func (m *Model) handleEnter() (tea.Model, tea.Cmd) {
 
 		case components.ModeNamespace:
 			// If nodes panel is active, load pods for selected node
-			if m.nodesPanelActive && len(m.nodes) > 0 {
-				node := m.nodes[m.nodeCursor]
-				m.loading = true
-				return m, m.loadPodsByNode(node.Name)
+			if m.nodesPanelActive {
+				filteredNodes := m.filteredNodes()
+				if len(filteredNodes) > 0 && m.nodeCursor < len(filteredNodes) {
+					node := filteredNodes[m.nodeCursor]
+					m.loading = true
+					m.nodeSearching = false
+					m.nodeSearchQuery = ""
+					return m, m.loadPodsByNode(node.Name)
+				}
 			}
 			// Otherwise, select namespace
 			ns := m.navigator.SelectedNamespace()
@@ -1126,6 +1184,20 @@ func (m *Model) loadPodsByNode(nodeName string) tea.Cmd {
 		}
 		return nodePodLoadedMsg{nodeName: nodeName, pods: pods}
 	}
+}
+
+func (m Model) filteredNodes() []k8s.NodeInfo {
+	if m.nodeSearchQuery == "" {
+		return m.nodes
+	}
+	query := strings.ToLower(m.nodeSearchQuery)
+	var filtered []k8s.NodeInfo
+	for _, node := range m.nodes {
+		if strings.Contains(strings.ToLower(node.Name), query) {
+			filtered = append(filtered, node)
+		}
+	}
+	return filtered
 }
 
 func (m *Model) loadDashboardData(pod *k8s.PodInfo) tea.Cmd {

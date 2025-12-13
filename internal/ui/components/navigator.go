@@ -73,19 +73,36 @@ func (n Navigator) Update(msg tea.Msg) (Navigator, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// When searching, only handle search-specific keys
+		// When searching, handle search-specific keys
 		if n.searching {
-			switch msg.String() {
-			case "enter", "esc":
+			// Check for Tab/Enter first (exit search mode)
+			if msg.Type == tea.KeyTab || msg.String() == "tab" {
 				n.searching = false
 				n.searchQuery = n.searchInput.Value()
-				n.cursor = 0 // Reset cursor after filter
-			default:
-				n.searchInput, cmd = n.searchInput.Update(msg)
-				// Live filter as user types
-				n.searchQuery = n.searchInput.Value()
-				n.cursor = 0
+				n.searchInput.Blur()
+				return n, cmd
 			}
+			if msg.Type == tea.KeyEnter || msg.String() == "enter" {
+				n.searching = false
+				n.searchQuery = n.searchInput.Value()
+				n.searchInput.Blur()
+				return n, cmd
+			}
+			if msg.Type == tea.KeyEsc || msg.String() == "esc" {
+				if n.searchQuery != "" {
+					n.searchQuery = ""
+					n.searchInput.SetValue("")
+					n.cursor = 0
+				} else {
+					n.searching = false
+					n.searchInput.Blur()
+				}
+				return n, cmd
+			}
+			// All other keys go to textinput for typing
+			n.searchInput, cmd = n.searchInput.Update(msg)
+			n.searchQuery = n.searchInput.Value()
+			n.cursor = 0 // Reset cursor when filter changes
 			return n, cmd
 		}
 

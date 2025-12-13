@@ -261,9 +261,15 @@ func (d Dashboard) Update(msg tea.Msg) (Dashboard, tea.Cmd) {
 			return d, nil
 		}
 
-		// When logs panel is searching, pass all keys to it (except esc/enter handled above)
-		if d.focus == FocusLogs && d.logs.IsSearching() {
+		// When in fullscreen logs mode and searching, pass all keys to logs panel
+		if d.fullscreen && d.focus == FocusLogs && d.logs.IsSearching() {
 			d.logs, cmd = d.logs.Update(msg)
+			return d, cmd
+		}
+
+		// When in fullscreen events mode and searching, pass all keys to events panel
+		if d.fullscreen && d.focus == FocusEvents && d.events.IsSearching() {
+			d.events, cmd = d.events.Update(msg)
 			return d, cmd
 		}
 
@@ -272,6 +278,15 @@ func (d Dashboard) Update(msg tea.Msg) (Dashboard, tea.Cmd) {
 			key := msg.String()
 			if len(key) == 1 && ((key[0] >= 'a' && key[0] <= 'z') || (key[0] >= 'A' && key[0] <= 'Z') || (key[0] >= '0' && key[0] <= '9')) {
 				d.logs, cmd = d.logs.Update(msg)
+				return d, cmd
+			}
+		}
+
+		// When in fullscreen events mode, pass letter/number keys directly for auto-search
+		if d.fullscreen && d.focus == FocusEvents {
+			key := msg.String()
+			if len(key) == 1 && ((key[0] >= 'a' && key[0] <= 'z') || (key[0] >= 'A' && key[0] <= 'Z') || (key[0] >= '0' && key[0] <= '9')) {
+				d.events, cmd = d.events.Update(msg)
 				return d, cmd
 			}
 		}
@@ -332,6 +347,11 @@ func (d Dashboard) Update(msg tea.Msg) (Dashboard, tea.Cmd) {
 			return d, nil
 
 		case key.Matches(msg, d.keys.ToggleFullView):
+			if d.fullscreen {
+				// Exiting fullscreen - clear search
+				d.logs.ClearSearch()
+				d.events.ClearSearch()
+			}
 			d.fullscreen = !d.fullscreen
 			return d, nil
 
@@ -720,8 +740,19 @@ func (d Dashboard) IsFullscreenLogs() bool {
 	return d.fullscreen && d.focus == FocusLogs
 }
 
+func (d Dashboard) IsFullscreenEvents() bool {
+	return d.fullscreen && d.focus == FocusEvents
+}
+
+func (d Dashboard) IsEventsSearching() bool {
+	return d.events.IsSearching()
+}
+
 func (d *Dashboard) CloseFullscreen() {
 	d.fullscreen = false
+	// Clear any active search when exiting fullscreen
+	d.logs.ClearSearch()
+	d.events.ClearSearch()
 }
 
 func (d Dashboard) renderDetailedResources() string {
