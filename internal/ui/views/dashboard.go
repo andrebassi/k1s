@@ -390,6 +390,17 @@ func (d Dashboard) Update(msg tea.Msg) (Dashboard, tea.Cmd) {
 			return d, nil
 
 		case msg.String() == "up":
+			// In fullscreen mode, pass up/down to the focused panel for scrolling
+			if d.fullscreen {
+				if d.focus == FocusLogs {
+					d.logs, cmd = d.logs.Update(msg)
+					return d, cmd
+				}
+				if d.focus == FocusEvents {
+					d.events, cmd = d.events.Update(msg)
+					return d, cmd
+				}
+			}
 			if d.focus == FocusMetrics {
 				// Let MetricsPanel handle up/down for scrolling
 				break
@@ -405,6 +416,17 @@ func (d Dashboard) Update(msg tea.Msg) (Dashboard, tea.Cmd) {
 			return d, nil
 
 		case msg.String() == "down":
+			// In fullscreen mode, pass up/down to the focused panel for scrolling
+			if d.fullscreen {
+				if d.focus == FocusLogs {
+					d.logs, cmd = d.logs.Update(msg)
+					return d, cmd
+				}
+				if d.focus == FocusEvents {
+					d.events, cmd = d.events.Update(msg)
+					return d, cmd
+				}
+			}
 			if d.focus == FocusMetrics {
 				// Let MetricsPanel handle up/down for scrolling
 				break
