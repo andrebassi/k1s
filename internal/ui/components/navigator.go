@@ -393,15 +393,33 @@ func (n Navigator) renderPodsTable(maxRows int, active bool) string {
 	b.WriteString("\n")
 
 	cursor := n.sectionCursors[SectionPods]
-	for i, p := range pods {
-		if i >= maxRows-1 {
-			b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("  ... and %d more", len(pods)-i)))
-			break
+	visibleRows := maxRows - 1 // Reserve for header
+
+	// Calculate visible window
+	startIdx, endIdx := n.calculateVisibleWindow(cursor, len(pods), visibleRows)
+
+	// Show "more above" indicator
+	if startIdx > 0 {
+		b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("  ... %d more above", startIdx)))
+		b.WriteString("\n")
+		visibleRows--
+		endIdx = startIdx + visibleRows
+		if endIdx > len(pods) {
+			endIdx = len(pods)
 		}
+	}
+
+	for i := startIdx; i < endIdx; i++ {
 		selected := active && i == cursor
-		b.WriteString(n.renderPodRow(p, selected))
+		b.WriteString(n.renderPodRow(pods[i], selected))
 		b.WriteString("\n")
 	}
+
+	// Show "more below" indicator
+	if endIdx < len(pods) {
+		b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("  ... and %d more", len(pods)-endIdx)))
+	}
+
 	return b.String()
 }
 
@@ -416,15 +434,30 @@ func (n Navigator) renderConfigMapsTable(maxRows int, active bool) string {
 	b.WriteString("\n")
 
 	cursor := n.sectionCursors[SectionConfigMaps]
-	for i, cm := range n.configmaps {
-		if i >= maxRows-1 {
-			b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("  ... and %d more", len(n.configmaps)-i)))
-			break
+	visibleRows := maxRows - 1
+
+	startIdx, endIdx := n.calculateVisibleWindow(cursor, len(n.configmaps), visibleRows)
+
+	if startIdx > 0 {
+		b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("  ... %d more above", startIdx)))
+		b.WriteString("\n")
+		visibleRows--
+		endIdx = startIdx + visibleRows
+		if endIdx > len(n.configmaps) {
+			endIdx = len(n.configmaps)
 		}
+	}
+
+	for i := startIdx; i < endIdx; i++ {
 		selected := active && i == cursor
-		b.WriteString(n.renderConfigMapRow(cm, selected))
+		b.WriteString(n.renderConfigMapRow(n.configmaps[i], selected))
 		b.WriteString("\n")
 	}
+
+	if endIdx < len(n.configmaps) {
+		b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("  ... and %d more", len(n.configmaps)-endIdx)))
+	}
+
 	return b.String()
 }
 
@@ -439,15 +472,30 @@ func (n Navigator) renderSecretsTable(maxRows int, active bool) string {
 	b.WriteString("\n")
 
 	cursor := n.sectionCursors[SectionSecrets]
-	for i, s := range n.secrets {
-		if i >= maxRows-1 {
-			b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("  ... and %d more", len(n.secrets)-i)))
-			break
+	visibleRows := maxRows - 1
+
+	startIdx, endIdx := n.calculateVisibleWindow(cursor, len(n.secrets), visibleRows)
+
+	if startIdx > 0 {
+		b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("  ... %d more above", startIdx)))
+		b.WriteString("\n")
+		visibleRows--
+		endIdx = startIdx + visibleRows
+		if endIdx > len(n.secrets) {
+			endIdx = len(n.secrets)
 		}
+	}
+
+	for i := startIdx; i < endIdx; i++ {
 		selected := active && i == cursor
-		b.WriteString(n.renderSecretRow(s, selected))
+		b.WriteString(n.renderSecretRow(n.secrets[i], selected))
 		b.WriteString("\n")
 	}
+
+	if endIdx < len(n.secrets) {
+		b.WriteString(styles.StatusMuted.Render(fmt.Sprintf("  ... and %d more", len(n.secrets)-endIdx)))
+	}
+
 	return b.String()
 }
 
@@ -582,6 +630,31 @@ func (n Navigator) renderResourceTypes() string {
 
 type visibleRange struct {
 	start, end int
+}
+
+// calculateVisibleWindow calculates start and end indices to keep cursor visible in a scrollable list
+func (n Navigator) calculateVisibleWindow(cursor, total, visibleRows int) (startIdx, endIdx int) {
+	if total <= visibleRows {
+		return 0, total
+	}
+
+	// Keep cursor in the middle when possible
+	halfVisible := visibleRows / 2
+	startIdx = cursor - halfVisible
+	if startIdx < 0 {
+		startIdx = 0
+	}
+
+	endIdx = startIdx + visibleRows
+	if endIdx > total {
+		endIdx = total
+		startIdx = endIdx - visibleRows
+		if startIdx < 0 {
+			startIdx = 0
+		}
+	}
+
+	return startIdx, endIdx
 }
 
 func (n Navigator) visibleRange(total int) visibleRange {

@@ -423,6 +423,37 @@ func ListSecrets(ctx context.Context, clientset *kubernetes.Clientset, namespace
 	return secretInfos, nil
 }
 
+// SecretData holds full Secret data with decoded values
+type SecretData struct {
+	Name      string
+	Namespace string
+	Type      string
+	Age       string
+	Data      map[string]string // Decoded from base64
+}
+
+// GetSecret returns full Secret data with decoded values
+func GetSecret(ctx context.Context, clientset *kubernetes.Clientset, namespace, name string) (*SecretData, error) {
+	secret, err := clientset.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	// Decode base64 values
+	decodedData := make(map[string]string)
+	for k, v := range secret.Data {
+		decodedData[k] = string(v) // secret.Data is already []byte, not base64 encoded
+	}
+
+	return &SecretData{
+		Name:      secret.Name,
+		Namespace: secret.Namespace,
+		Type:      string(secret.Type),
+		Age:       formatAge(secret.CreationTimestamp.Time),
+		Data:      decodedData,
+	}, nil
+}
+
 func podToPodInfo(p *corev1.Pod) PodInfo {
 	var restarts int32
 	var containers []ContainerInfo

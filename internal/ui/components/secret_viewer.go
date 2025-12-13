@@ -2,7 +2,6 @@ package components
 
 import (
 	"fmt"
-	"os/exec"
 	"sort"
 	"strings"
 
@@ -12,40 +11,40 @@ import (
 	"github.com/andrebassi/k8sdebug/internal/ui/styles"
 )
 
-// ConfigMapViewer displays ConfigMap data in a modal with key selection
-type ConfigMapViewer struct {
-	configmap   *k8s.ConfigMapData
+// SecretViewer displays Secret data in a modal with decoded values and key selection
+type SecretViewer struct {
+	secret      *k8s.SecretData
 	namespace   string
 	visible     bool
 	scroll      int
 	width       int
 	height      int
-	lines       []string   // Pre-rendered lines for scrolling
-	sortedKeys  []string   // Sorted keys for selection
-	keyCursor   int        // Currently selected key index
+	lines       []string    // Pre-rendered lines for scrolling
+	sortedKeys  []string    // Sorted keys for selection
+	keyCursor   int         // Currently selected key index
 	keyLineMap  map[int]int // Maps key index to first line index
-	copied      bool       // Show "copied" feedback
+	copied      bool        // Show "copied" feedback
 }
 
-// ConfigMapViewerClosed is sent when the viewer is closed
-type ConfigMapViewerClosed struct{}
+// SecretViewerClosed is sent when the viewer is closed
+type SecretViewerClosed struct{}
 
-// ConfigMapValueCopied is sent when a value is copied to clipboard
-type ConfigMapValueCopied struct {
+// SecretValueCopied is sent when a value is copied to clipboard
+type SecretValueCopied struct {
 	Key string
 }
 
-func NewConfigMapViewer() ConfigMapViewer {
-	return ConfigMapViewer{
+func NewSecretViewer() SecretViewer {
+	return SecretViewer{
 		keyLineMap: make(map[int]int),
 	}
 }
 
-func (v ConfigMapViewer) Init() tea.Cmd {
+func (v SecretViewer) Init() tea.Cmd {
 	return nil
 }
 
-func (v ConfigMapViewer) Update(msg tea.Msg) (ConfigMapViewer, tea.Cmd) {
+func (v SecretViewer) Update(msg tea.Msg) (SecretViewer, tea.Cmd) {
 	if !v.visible {
 		return v, nil
 	}
@@ -56,7 +55,7 @@ func (v ConfigMapViewer) Update(msg tea.Msg) (ConfigMapViewer, tea.Cmd) {
 		case "esc", "q":
 			v.visible = false
 			v.copied = false
-			return v, func() tea.Msg { return ConfigMapViewerClosed{} }
+			return v, func() tea.Msg { return SecretViewerClosed{} }
 		case "up", "k":
 			v.copied = false
 			if v.keyCursor > 0 {
@@ -71,12 +70,12 @@ func (v ConfigMapViewer) Update(msg tea.Msg) (ConfigMapViewer, tea.Cmd) {
 			}
 		case "enter":
 			// Copy selected key's value to clipboard
-			if v.keyCursor >= 0 && v.keyCursor < len(v.sortedKeys) && v.configmap != nil {
+			if v.keyCursor >= 0 && v.keyCursor < len(v.sortedKeys) && v.secret != nil {
 				key := v.sortedKeys[v.keyCursor]
-				value := v.configmap.Data[key]
+				value := v.secret.Data[key]
 				if err := copyToClipboard(value); err == nil {
 					v.copied = true
-					return v, func() tea.Msg { return ConfigMapValueCopied{Key: key} }
+					return v, func() tea.Msg { return SecretValueCopied{Key: key} }
 				}
 			}
 		case "pgup", "ctrl+u":
@@ -113,7 +112,7 @@ func (v ConfigMapViewer) Update(msg tea.Msg) (ConfigMapViewer, tea.Cmd) {
 	return v, nil
 }
 
-func (v *ConfigMapViewer) scrollToKey() {
+func (v *SecretViewer) scrollToKey() {
 	if lineIdx, ok := v.keyLineMap[v.keyCursor]; ok {
 		maxLines := v.maxVisibleLines()
 		// Scroll to make the selected key visible
@@ -125,7 +124,7 @@ func (v *ConfigMapViewer) scrollToKey() {
 	}
 }
 
-func (v ConfigMapViewer) maxVisibleLines() int {
+func (v SecretViewer) maxVisibleLines() int {
 	maxLines := v.height - 10
 	if maxLines < 5 {
 		maxLines = 5
@@ -133,18 +132,18 @@ func (v ConfigMapViewer) maxVisibleLines() int {
 	return maxLines
 }
 
-func (v *ConfigMapViewer) buildLines() {
+func (v *SecretViewer) buildLines() {
 	v.lines = []string{}
 	v.sortedKeys = []string{}
 	v.keyLineMap = make(map[int]int)
 
-	if v.configmap == nil || len(v.configmap.Data) == 0 {
-		v.lines = append(v.lines, styles.StatusMuted.Render("No data in this ConfigMap"))
+	if v.secret == nil || len(v.secret.Data) == 0 {
+		v.lines = append(v.lines, styles.StatusMuted.Render("No data in this Secret"))
 		return
 	}
 
 	// Sort keys
-	for k := range v.configmap.Data {
+	for k := range v.secret.Data {
 		v.sortedKeys = append(v.sortedKeys, k)
 	}
 	sort.Strings(v.sortedKeys)
@@ -161,8 +160,8 @@ func (v *ConfigMapViewer) buildLines() {
 		// Key header (will be highlighted based on selection in View)
 		v.lines = append(v.lines, key)
 
-		// Value with word wrapping
-		value := v.configmap.Data[key]
+		// Value with word wrapping (decoded from base64)
+		value := v.secret.Data[key]
 		if value == "" {
 			v.lines = append(v.lines, "  (empty)")
 		} else {
@@ -184,7 +183,7 @@ func (v *ConfigMapViewer) buildLines() {
 	}
 }
 
-func (v ConfigMapViewer) wrapText(text string, maxWidth int) []string {
+func (v SecretViewer) wrapText(text string, maxWidth int) []string {
 	if len(text) <= maxWidth {
 		return []string{text}
 	}
@@ -210,8 +209,8 @@ func (v ConfigMapViewer) wrapText(text string, maxWidth int) []string {
 	return lines
 }
 
-func (v ConfigMapViewer) View() string {
-	if !v.visible || v.configmap == nil {
+func (v SecretViewer) View() string {
+	if !v.visible || v.secret == nil {
 		return ""
 	}
 
@@ -225,11 +224,11 @@ func (v ConfigMapViewer) View() string {
 
 	breadcrumb := itemStyle.Render(v.namespace) +
 		separatorStyle.Render(" > ") +
-		itemStyle.Render("configmaps") +
+		itemStyle.Render("secrets") +
 		separatorStyle.Render(" > ") +
-		itemStyle.Render(v.configmap.Name) +
+		itemStyle.Render(v.secret.Name) +
 		separatorStyle.Render(" - ") +
-		infoStyle.Render(fmt.Sprintf("[%s] [%d keys]", v.configmap.Age, len(v.configmap.Data)))
+		infoStyle.Render(fmt.Sprintf("[%s] [%s] [%d keys]", v.secret.Age, v.secret.Type, len(v.secret.Data)))
 	header.WriteString(breadcrumb)
 	header.WriteString("\n")
 
@@ -295,7 +294,7 @@ func (v ConfigMapViewer) View() string {
 		content.WriteString("\n")
 	}
 
-	// Box style matching Logs panel
+	// Box style matching other viewers
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(styles.Surface).
@@ -322,8 +321,8 @@ func (v ConfigMapViewer) View() string {
 	return header.String() + boxedContent + "\n" + footer
 }
 
-func (v *ConfigMapViewer) Show(cm *k8s.ConfigMapData, namespace string) {
-	v.configmap = cm
+func (v *SecretViewer) Show(secret *k8s.SecretData, namespace string) {
+	v.secret = secret
 	v.namespace = namespace
 	v.scroll = 0
 	v.keyCursor = 0
@@ -332,38 +331,19 @@ func (v *ConfigMapViewer) Show(cm *k8s.ConfigMapData, namespace string) {
 	v.visible = true
 }
 
-func (v *ConfigMapViewer) Hide() {
+func (v *SecretViewer) Hide() {
 	v.visible = false
 	v.copied = false
 }
 
-func (v ConfigMapViewer) IsVisible() bool {
+func (v SecretViewer) IsVisible() bool {
 	return v.visible
 }
 
-func (v *ConfigMapViewer) SetSize(width, height int) {
+func (v *SecretViewer) SetSize(width, height int) {
 	v.width = width
 	v.height = height
-	if v.configmap != nil {
+	if v.secret != nil {
 		v.buildLines()
 	}
-}
-
-// copyToClipboard copies text to system clipboard
-func copyToClipboard(text string) error {
-	cmd := exec.Command("pbcopy")
-	pipe, err := cmd.StdinPipe()
-	if err != nil {
-		return err
-	}
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	if _, err := pipe.Write([]byte(text)); err != nil {
-		return err
-	}
-	if err := pipe.Close(); err != nil {
-		return err
-	}
-	return cmd.Wait()
 }

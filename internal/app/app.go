@@ -35,6 +35,7 @@ type Model struct {
 	workloadActionMenu components.WorkloadActionMenu
 	confirmDialog      components.ConfirmDialog
 	configMapViewer    components.ConfigMapViewer
+	secretViewer       components.SecretViewer
 	view               ViewState
 	width              int
 	height             int
@@ -98,6 +99,11 @@ type configMapDataMsg struct {
 	err  error
 }
 
+type secretDataMsg struct {
+	data *k8s.SecretData
+	err  error
+}
+
 func New() (*Model, error) {
 	client, err := k8s.NewClient()
 	if err != nil {
@@ -126,6 +132,7 @@ func New() (*Model, error) {
 		workloadActionMenu: components.NewWorkloadActionMenu(),
 		confirmDialog:      components.NewConfirmDialog(),
 		configMapViewer:    components.NewConfigMapViewer(),
+		secretViewer:       components.NewSecretViewer(),
 		view:               ViewNavigator,
 		loading:            true,
 		keys:               keys.DefaultKeyMap(),
@@ -195,6 +202,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case components.ConfigMapViewerClosed:
 		// ConfigMap viewer was closed, nothing special to do
+		return m, nil
+
+	case secretDataMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.statusMsg = "Error loading Secret: " + msg.err.Error()
+			return m, nil
+		}
+		m.secretViewer.SetSize(m.width, m.height)
+		m.secretViewer.Show(msg.data, m.k8sClient.Namespace())
+		return m, nil
+
+	case components.SecretViewerClosed:
+		// Secret viewer was closed, nothing special to do
 		return m, nil
 
 	case dashboardDataMsg:
@@ -341,6 +362,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// ConfigMap viewer takes priority
 		if m.configMapViewer.IsVisible() {
 			m.configMapViewer, cmd = m.configMapViewer.Update(msg)
+			return m, cmd
+		}
+
+		// Secret viewer takes priority
+		if m.secretViewer.IsVisible() {
+			m.secretViewer, cmd = m.secretViewer.Update(msg)
 			return m, cmd
 		}
 
@@ -564,6 +591,19 @@ func (m Model) View() string {
 		)
 	}
 
+	// Render Secret viewer as overlay
+	if m.secretViewer.IsVisible() {
+		return lipgloss.Place(
+			m.width,
+			m.height,
+			lipgloss.Left,
+			lipgloss.Top,
+			m.secretViewer.View(),
+			lipgloss.WithWhitespaceChars(" "),
+			lipgloss.WithWhitespaceForeground(styles.Background),
+		)
+	}
+
 	// Create bordered box for content
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -649,7 +689,11 @@ func (m *Model) handleEnter() (tea.Model, tea.Cmd) {
 					return m, m.loadConfigMapData(cm.Name)
 				}
 			case components.SectionSecrets:
-				// Secrets - no action yet
+				secret := m.navigator.SelectedSecret()
+				if secret != nil {
+					m.loading = true
+					return m, m.loadSecretData(secret.Name)
+				}
 			}
 
 		case components.ModeNamespace:
@@ -755,6 +799,17 @@ func (m *Model) loadConfigMapData(name string) tea.Cmd {
 			return configMapDataMsg{err: err}
 		}
 		return configMapDataMsg{data: data}
+	}
+}
+
+func (m *Model) loadSecretData(name string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		data, err := k8s.GetSecret(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace(), name)
+		if err != nil {
+			return secretDataMsg{err: err}
+		}
+		return secretDataMsg{data: data}
 	}
 }
 
