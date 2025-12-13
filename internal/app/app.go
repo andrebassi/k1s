@@ -479,6 +479,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		// When dashboard is in fullscreen logs mode, pass letter/number keys directly for search
+		if m.view == ViewDashboard && m.dashboard.IsFullscreenLogs() {
+			key := msg.String()
+			if len(key) == 1 && ((key[0] >= 'a' && key[0] <= 'z') || (key[0] >= 'A' && key[0] <= 'Z') || (key[0] >= '0' && key[0] <= '9')) {
+				m.dashboard, cmd = m.dashboard.Update(msg)
+				return m, cmd
+			}
+		}
+
 		// Normal key handling when not searching
 		switch {
 		case key.Matches(msg, m.keys.Quit):

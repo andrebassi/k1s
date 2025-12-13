@@ -267,6 +267,15 @@ func (d Dashboard) Update(msg tea.Msg) (Dashboard, tea.Cmd) {
 			return d, cmd
 		}
 
+		// When in fullscreen logs mode, pass letter/number keys directly for auto-search
+		if d.fullscreen && d.focus == FocusLogs {
+			key := msg.String()
+			if len(key) == 1 && ((key[0] >= 'a' && key[0] <= 'z') || (key[0] >= 'A' && key[0] <= 'Z') || (key[0] >= '0' && key[0] <= '9')) {
+				d.logs, cmd = d.logs.Update(msg)
+				return d, cmd
+			}
+		}
+
 		// Clear status message on any key press
 		d.statusMsg = ""
 
@@ -705,6 +714,10 @@ func (d Dashboard) HasActiveOverlay() bool {
 
 func (d Dashboard) IsFullscreen() bool {
 	return d.fullscreen
+}
+
+func (d Dashboard) IsFullscreenLogs() bool {
+	return d.fullscreen && d.focus == FocusLogs
 }
 
 func (d *Dashboard) CloseFullscreen() {
