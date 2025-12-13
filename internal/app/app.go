@@ -475,8 +475,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// When dashboard is in fullscreen logs/events mode, pass search-related keys directly
 		if m.view == ViewDashboard && (m.dashboard.IsFullscreenLogs() || m.dashboard.IsFullscreenEvents()) {
 			key := msg.String()
-			// Pass / to start search, and letters/numbers when already searching
-			if key == "/" {
+			// Pass / to start search, OR all keys if already searching
+			if key == "/" || m.dashboard.IsLogsSearching() || m.dashboard.IsEventsSearching() {
 				m.dashboard, cmd = m.dashboard.Update(msg)
 				return m, cmd
 			}
