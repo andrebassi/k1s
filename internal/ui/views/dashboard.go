@@ -611,10 +611,22 @@ func (d *Dashboard) SetPod(pod *k8s.PodInfo) {
 }
 
 func (d *Dashboard) SetLogs(logs []k8s.LogLine) {
+	// When fullscreen, update size before setting logs to ensure proper viewport
+	if d.fullscreen && d.focus == FocusLogs {
+		panelWidth := d.width - 4
+		panelHeight := d.height - 8
+		d.logs.SetSize(panelWidth, panelHeight)
+	}
 	d.logs.SetLogs(logs)
 }
 
 func (d *Dashboard) SetEvents(events []k8s.EventInfo) {
+	// When fullscreen, update size before setting events to ensure proper viewport
+	if d.fullscreen && d.focus == FocusEvents {
+		panelWidth := d.width - 4
+		panelHeight := d.height - 8
+		d.events.SetSize(panelWidth, panelHeight)
+	}
 	d.events.SetEvents(events)
 }
 
