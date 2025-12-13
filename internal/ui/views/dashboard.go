@@ -401,8 +401,13 @@ func (d Dashboard) Update(msg tea.Msg) (Dashboard, tea.Cmd) {
 				d.fullscreen = !d.fullscreen
 				return d, nil
 			}
-			// Enter on Events panel toggles fullscreen
+			// Enter on Events panel: if fullscreen, copy events; otherwise toggle fullscreen
 			if d.focus == FocusEvents {
+				if d.fullscreen {
+					// In fullscreen, pass Enter to events panel for copy
+					d.events, cmd = d.events.Update(msg)
+					return d, cmd
+				}
 				d.fullscreen = !d.fullscreen
 				return d, nil
 			}

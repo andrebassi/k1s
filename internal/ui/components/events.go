@@ -6,18 +6,20 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/andrebassi/k8sdebug/internal/k8s"
 	"github.com/andrebassi/k8sdebug/internal/ui/styles"
 )
 
 type EventsPanel struct {
-	events    []k8s.EventInfo
-	viewport  viewport.Model
-	ready     bool
-	width     int
-	height    int
-	cursor    int
-	showAll   bool
+	events     []k8s.EventInfo
+	viewport   viewport.Model
+	ready      bool
+	width      int
+	height     int
+	cursor     int
+	showAll    bool
+	copyStatus string
 }
 
 func NewEventsPanel() EventsPanel {
@@ -34,6 +36,16 @@ func (e EventsPanel) Update(msg tea.Msg) (EventsPanel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
+		case "enter":
+			// Copy events to clipboard
+			content := e.getPlainTextEvents()
+			err := CopyToClipboard(content)
+			if err == nil {
+				e.copyStatus = "Copied to clipboard!"
+			} else {
+				e.copyStatus = "Copy failed: " + err.Error()
+			}
+			return e, nil
 		case "w":
 			e.showAll = !e.showAll
 			e.updateContent()
@@ -70,12 +82,25 @@ func (e EventsPanel) View() string {
 	}
 	header.WriteString("\n")
 
-	return header.String() + e.viewport.View()
+	result := header.String() + e.viewport.View()
+
+	// Show copy status at bottom right
+	if e.copyStatus != "" {
+		padding := e.width - len(e.copyStatus) - 4
+		if padding < 0 {
+			padding = 0
+		}
+		statusMsg := lipgloss.NewStyle().Foreground(styles.Success).Bold(true).Render(e.copyStatus)
+		result += strings.Repeat(" ", padding) + statusMsg
+	}
+
+	return result
 }
 
 func (e *EventsPanel) SetEvents(events []k8s.EventInfo) {
 	e.events = events
 	e.cursor = 0
+	e.copyStatus = "" // Clear copy status when events update
 	e.updateContent()
 }
 
@@ -186,4 +211,20 @@ func (e EventsPanel) EventCount() int {
 
 func (e EventsPanel) WarningCount() int {
 	return e.warningCount()
+}
+
+// getPlainTextEvents returns events as plain text without ANSI codes
+func (e EventsPanel) getPlainTextEvents() string {
+	var content strings.Builder
+	events := e.getDisplayedEvents()
+
+	for _, event := range events {
+		content.WriteString(fmt.Sprintf("%-8s %-6s %-20s %s\n",
+			event.Type,
+			event.Age,
+			event.Reason,
+			event.Message))
+	}
+
+	return content.String()
 }
