@@ -1048,7 +1048,7 @@ func (m *Model) loadDashboardData(pod *k8s.PodInfo) tea.Cmd {
 		logs, _ := k8s.GetAllContainerLogs(ctx, m.k8sClient.Clientset(), pod.Namespace, pod.Name, 200)
 		events, _ := k8s.GetPodEvents(ctx, m.k8sClient.Clientset(), pod.Namespace, pod.Name)
 		metrics, _ := k8s.GetPodMetrics(ctx, m.k8sClient.MetricsClient(), pod.Namespace, pod.Name)
-		related, _ := k8s.GetRelatedResources(ctx, m.k8sClient.Clientset(), *updatedPod)
+		related, _ := k8s.GetRelatedResources(ctx, m.k8sClient.Clientset(), m.k8sClient.DynamicClient(), *updatedPod)
 
 		helpers := k8s.AnalyzePodIssues(updatedPod, events)
 

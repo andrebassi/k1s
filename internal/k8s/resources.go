@@ -13,6 +13,8 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -971,11 +973,26 @@ func getPodStatus(p *corev1.Pod) string {
 }
 
 type RelatedResources struct {
-	Services   []ServiceInfo
-	Ingresses  []IngressInfo
-	ConfigMaps []string
-	Secrets    []string
-	Owner      *OwnerInfo
+	Services        []ServiceInfo
+	Ingresses       []IngressInfo
+	VirtualServices []VirtualServiceInfo
+	Gateways        []GatewayInfo
+	ConfigMaps      []string
+	Secrets         []string
+	Owner           *OwnerInfo
+}
+
+type GatewayInfo struct {
+	Name      string
+	Namespace string
+	Servers   []GatewayServer
+}
+
+type GatewayServer struct {
+	Port     int32
+	Protocol string
+	Hosts    []string
+	TLS      string // SIMPLE, MUTUAL, PASSTHROUGH, etc
 }
 
 type ServiceInfo struct {
@@ -987,9 +1004,39 @@ type ServiceInfo struct {
 }
 
 type IngressInfo struct {
-	Name  string
-	Hosts string
-	Paths string
+	Name        string
+	Class       string   // Ingress class (nginx, traefik, istio, etc)
+	Hosts       []string
+	TLS         bool
+	TLSSecrets  []string
+	Rules       []IngressRuleInfo
+	Annotations map[string]string // Important annotations for debugging
+}
+
+type IngressRuleInfo struct {
+	Host    string
+	Paths   []IngressPathInfo
+}
+
+type IngressPathInfo struct {
+	Path        string
+	PathType    string
+	ServiceName string
+	ServicePort string
+}
+
+type VirtualServiceInfo struct {
+	Name     string
+	Hosts    []string
+	Gateways []string
+	Routes   []VirtualServiceRoute
+}
+
+type VirtualServiceRoute struct {
+	Match       string // Match conditions summary
+	Destination string // Service destination
+	Port        int32
+	Weight      int32
 }
 
 type OwnerInfo struct {
@@ -997,7 +1044,7 @@ type OwnerInfo struct {
 	Name string
 }
 
-func GetRelatedResources(ctx context.Context, clientset *kubernetes.Clientset, pod PodInfo) (*RelatedResources, error) {
+func GetRelatedResources(ctx context.Context, clientset *kubernetes.Clientset, dynamicClient dynamic.Interface, pod PodInfo) (*RelatedResources, error) {
 	related := &RelatedResources{}
 
 	if pod.OwnerRef != "" {
@@ -1050,23 +1097,90 @@ func GetRelatedResources(ctx context.Context, clientset *kubernetes.Clientset, p
 		for _, svc := range related.Services {
 			for _, ing := range ings.Items {
 				if ingressReferencesService(ing, svc.Name) {
-					var hosts, paths []string
+					ingInfo := IngressInfo{
+						Name:        ing.Name,
+						Annotations: make(map[string]string),
+					}
+
+					// Get ingress class
+					if ing.Spec.IngressClassName != nil {
+						ingInfo.Class = *ing.Spec.IngressClassName
+					} else if class, ok := ing.Annotations["kubernetes.io/ingress.class"]; ok {
+						ingInfo.Class = class
+					}
+
+					// Get TLS info
+					for _, tls := range ing.Spec.TLS {
+						ingInfo.TLS = true
+						if tls.SecretName != "" {
+							ingInfo.TLSSecrets = append(ingInfo.TLSSecrets, tls.SecretName)
+						}
+						ingInfo.Hosts = append(ingInfo.Hosts, tls.Hosts...)
+					}
+
+					// Get rules with detailed path info
 					for _, rule := range ing.Spec.Rules {
-						hosts = append(hosts, rule.Host)
+						if rule.Host != "" && !contains(ingInfo.Hosts, rule.Host) {
+							ingInfo.Hosts = append(ingInfo.Hosts, rule.Host)
+						}
+						ruleInfo := IngressRuleInfo{Host: rule.Host}
 						if rule.HTTP != nil {
 							for _, p := range rule.HTTP.Paths {
-								paths = append(paths, p.Path)
+								pathType := "Prefix"
+								if p.PathType != nil {
+									pathType = string(*p.PathType)
+								}
+								svcPort := ""
+								if p.Backend.Service != nil {
+									if p.Backend.Service.Port.Name != "" {
+										svcPort = p.Backend.Service.Port.Name
+									} else {
+										svcPort = fmt.Sprintf("%d", p.Backend.Service.Port.Number)
+									}
+								}
+								ruleInfo.Paths = append(ruleInfo.Paths, IngressPathInfo{
+									Path:        p.Path,
+									PathType:    pathType,
+									ServiceName: p.Backend.Service.Name,
+									ServicePort: svcPort,
+								})
 							}
 						}
+						ingInfo.Rules = append(ingInfo.Rules, ruleInfo)
 					}
-					related.Ingresses = append(related.Ingresses, IngressInfo{
-						Name:  ing.Name,
-						Hosts: strings.Join(hosts, ", "),
-						Paths: strings.Join(paths, ", "),
-					})
+
+					// Extract important annotations for debugging
+					debugAnnotations := []string{
+						"nginx.ingress.kubernetes.io/rewrite-target",
+						"nginx.ingress.kubernetes.io/ssl-redirect",
+						"nginx.ingress.kubernetes.io/proxy-body-size",
+						"nginx.ingress.kubernetes.io/proxy-read-timeout",
+						"nginx.ingress.kubernetes.io/proxy-send-timeout",
+						"nginx.ingress.kubernetes.io/backend-protocol",
+						"nginx.ingress.kubernetes.io/cors-allow-origin",
+						"nginx.ingress.kubernetes.io/whitelist-source-range",
+						"nginx.ingress.kubernetes.io/limit-rps",
+						"traefik.ingress.kubernetes.io/router.entrypoints",
+						"traefik.ingress.kubernetes.io/router.middlewares",
+						"cert-manager.io/cluster-issuer",
+						"cert-manager.io/issuer",
+						"external-dns.alpha.kubernetes.io/hostname",
+					}
+					for _, key := range debugAnnotations {
+						if val, ok := ing.Annotations[key]; ok {
+							ingInfo.Annotations[key] = val
+						}
+					}
+
+					related.Ingresses = append(related.Ingresses, ingInfo)
 				}
 			}
 		}
+	}
+
+	// Fetch Istio VirtualServices and Gateways using dynamic client
+	if dynamicClient != nil {
+		related.VirtualServices, related.Gateways = getIstioResources(ctx, dynamicClient, pod.Namespace, related.Services)
 	}
 
 	podObj, err := clientset.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
@@ -1115,6 +1229,206 @@ func ingressReferencesService(ing networkingv1.Ingress, svcName string) bool {
 		}
 	}
 	return false
+}
+
+func contains(slice []string, str string) bool {
+	for _, s := range slice {
+		if s == str {
+			return true
+		}
+	}
+	return false
+}
+
+// getIstioResources fetches Istio VirtualServices and Gateways using dynamic client
+func getIstioResources(ctx context.Context, dynamicClient dynamic.Interface, namespace string, services []ServiceInfo) ([]VirtualServiceInfo, []GatewayInfo) {
+	var virtualServices []VirtualServiceInfo
+	var gateways []GatewayInfo
+	gatewaySet := make(map[string]bool) // Track which gateways we need to fetch
+
+	// Define VirtualService GVR
+	vsGVR := schema.GroupVersionResource{
+		Group:    "networking.istio.io",
+		Version:  "v1beta1",
+		Resource: "virtualservices",
+	}
+
+	// Fetch VirtualServices in the namespace
+	vsList, err := dynamicClient.Resource(vsGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		// Istio might not be installed, just return empty
+		return virtualServices, gateways
+	}
+
+	serviceNames := make(map[string]bool)
+	for _, svc := range services {
+		serviceNames[svc.Name] = true
+	}
+
+	for _, vs := range vsList.Items {
+		vsInfo := VirtualServiceInfo{
+			Name: vs.GetName(),
+		}
+
+		// Extract hosts
+		if spec, ok := vs.Object["spec"].(map[string]interface{}); ok {
+			if hosts, ok := spec["hosts"].([]interface{}); ok {
+				for _, h := range hosts {
+					if host, ok := h.(string); ok {
+						vsInfo.Hosts = append(vsInfo.Hosts, host)
+					}
+				}
+			}
+
+			// Extract gateways
+			if gws, ok := spec["gateways"].([]interface{}); ok {
+				for _, g := range gws {
+					if gw, ok := g.(string); ok {
+						vsInfo.Gateways = append(vsInfo.Gateways, gw)
+						gatewaySet[gw] = true
+					}
+				}
+			}
+
+			// Extract HTTP routes
+			if http, ok := spec["http"].([]interface{}); ok {
+				for _, route := range http {
+					if routeMap, ok := route.(map[string]interface{}); ok {
+						vsRoute := VirtualServiceRoute{}
+
+						// Extract match conditions
+						if matches, ok := routeMap["match"].([]interface{}); ok && len(matches) > 0 {
+							if match, ok := matches[0].(map[string]interface{}); ok {
+								if uri, ok := match["uri"].(map[string]interface{}); ok {
+									for matchType, val := range uri {
+										vsRoute.Match = fmt.Sprintf("%s: %v", matchType, val)
+										break
+									}
+								}
+							}
+						}
+						if vsRoute.Match == "" {
+							vsRoute.Match = "/*"
+						}
+
+						// Extract route destinations
+						if routeDests, ok := routeMap["route"].([]interface{}); ok {
+							for _, rd := range routeDests {
+								if rdMap, ok := rd.(map[string]interface{}); ok {
+									if dest, ok := rdMap["destination"].(map[string]interface{}); ok {
+										if host, ok := dest["host"].(string); ok {
+											vsRoute.Destination = host
+											// Check if this VS routes to one of our services
+											shortHost := strings.Split(host, ".")[0]
+											if serviceNames[shortHost] || serviceNames[host] {
+												// This VS is relevant to our pod
+											}
+										}
+										if port, ok := dest["port"].(map[string]interface{}); ok {
+											if number, ok := port["number"].(int64); ok {
+												vsRoute.Port = int32(number)
+											} else if number, ok := port["number"].(float64); ok {
+												vsRoute.Port = int32(number)
+											}
+										}
+									}
+									if weight, ok := rdMap["weight"].(int64); ok {
+										vsRoute.Weight = int32(weight)
+									} else if weight, ok := rdMap["weight"].(float64); ok {
+										vsRoute.Weight = int32(weight)
+									}
+								}
+							}
+						}
+
+						vsInfo.Routes = append(vsInfo.Routes, vsRoute)
+					}
+				}
+			}
+		}
+
+		// Only include VirtualServices that route to our services
+		isRelevant := false
+		for _, route := range vsInfo.Routes {
+			shortHost := strings.Split(route.Destination, ".")[0]
+			if serviceNames[shortHost] || serviceNames[route.Destination] {
+				isRelevant = true
+				break
+			}
+		}
+		if isRelevant {
+			virtualServices = append(virtualServices, vsInfo)
+		}
+	}
+
+	// Fetch referenced Gateways
+	gwGVR := schema.GroupVersionResource{
+		Group:    "networking.istio.io",
+		Version:  "v1beta1",
+		Resource: "gateways",
+	}
+
+	for gwRef := range gatewaySet {
+		// Parse gateway reference (can be "namespace/name" or just "name")
+		gwNamespace := namespace
+		gwName := gwRef
+		if strings.Contains(gwRef, "/") {
+			parts := strings.SplitN(gwRef, "/", 2)
+			gwNamespace = parts[0]
+			gwName = parts[1]
+		}
+
+		gw, err := dynamicClient.Resource(gwGVR).Namespace(gwNamespace).Get(ctx, gwName, metav1.GetOptions{})
+		if err != nil {
+			continue
+		}
+
+		gwInfo := GatewayInfo{
+			Name:      gw.GetName(),
+			Namespace: gwNamespace,
+		}
+
+		if spec, ok := gw.Object["spec"].(map[string]interface{}); ok {
+			if servers, ok := spec["servers"].([]interface{}); ok {
+				for _, srv := range servers {
+					if srvMap, ok := srv.(map[string]interface{}); ok {
+						server := GatewayServer{}
+
+						if port, ok := srvMap["port"].(map[string]interface{}); ok {
+							if number, ok := port["number"].(int64); ok {
+								server.Port = int32(number)
+							} else if number, ok := port["number"].(float64); ok {
+								server.Port = int32(number)
+							}
+							if protocol, ok := port["protocol"].(string); ok {
+								server.Protocol = protocol
+							}
+						}
+
+						if hosts, ok := srvMap["hosts"].([]interface{}); ok {
+							for _, h := range hosts {
+								if host, ok := h.(string); ok {
+									server.Hosts = append(server.Hosts, host)
+								}
+							}
+						}
+
+						if tls, ok := srvMap["tls"].(map[string]interface{}); ok {
+							if mode, ok := tls["mode"].(string); ok {
+								server.TLS = mode
+							}
+						}
+
+						gwInfo.Servers = append(gwInfo.Servers, server)
+					}
+				}
+			}
+		}
+
+		gateways = append(gateways, gwInfo)
+	}
+
+	return virtualServices, gateways
 }
 
 func GetDeployment(ctx context.Context, clientset *kubernetes.Clientset, namespace, name string) (*appsv1.Deployment, error) {

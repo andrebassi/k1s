@@ -238,7 +238,22 @@ func (m ManifestPanel) renderRelated() string {
 	if len(m.related.Ingresses) > 0 {
 		b.WriteString("  Ingresses:\n")
 		for _, ing := range m.related.Ingresses {
-			b.WriteString(fmt.Sprintf("    • %s - %s%s\n", ing.Name, ing.Hosts, ing.Paths))
+			hosts := strings.Join(ing.Hosts, ", ")
+			if hosts == "" {
+				hosts = "*"
+			}
+			// Collect paths from rules
+			var paths []string
+			for _, rule := range ing.Rules {
+				for _, p := range rule.Paths {
+					paths = append(paths, p.Path)
+				}
+			}
+			pathStr := strings.Join(paths, ", ")
+			if pathStr == "" {
+				pathStr = "/"
+			}
+			b.WriteString(fmt.Sprintf("    • %s - %s %s\n", ing.Name, hosts, pathStr))
 		}
 	}
 

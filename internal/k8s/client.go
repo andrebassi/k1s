@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -16,6 +17,7 @@ import (
 type Client struct {
 	clientset     *kubernetes.Clientset
 	metricsClient *metricsv.Clientset
+	dynamicClient dynamic.Interface
 	config        *rest.Config
 	context       string
 	namespace     string
@@ -41,6 +43,11 @@ func NewClient() (*Client, error) {
 
 	metricsClient, _ := metricsv.NewForConfig(config)
 
+	dynamicClient, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dynamic client: %w", err)
+	}
+
 	rawConfig, _ := clientcmd.NewDefaultClientConfigLoadingRules().Load()
 	currentContext := ""
 	if rawConfig != nil {
@@ -50,10 +57,15 @@ func NewClient() (*Client, error) {
 	return &Client{
 		clientset:     clientset,
 		metricsClient: metricsClient,
+		dynamicClient: dynamicClient,
 		config:        config,
 		context:       currentContext,
 		namespace:     "default",
 	}, nil
+}
+
+func (c *Client) DynamicClient() dynamic.Interface {
+	return c.dynamicClient
 }
 
 func (c *Client) Clientset() *kubernetes.Clientset {

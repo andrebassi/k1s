@@ -120,6 +120,17 @@ func (d Dashboard) Update(msg tea.Msg) (Dashboard, tea.Cmd) {
 		return d, nil
 	}
 
+	// Handle ResultViewerCopiedMsg (copy from result viewer)
+	if result, ok := msg.(components.ResultViewerCopiedMsg); ok {
+		if result.Err == nil {
+			contentLen := len(result.Content)
+			d.statusMsg = fmt.Sprintf("Copied %d chars to clipboard: %s", contentLen, result.Title)
+		} else {
+			d.statusMsg = "Copy failed: " + result.Err.Error()
+		}
+		return d, nil
+	}
+
 	// Handle PodActionMenuResult
 	if result, ok := msg.(components.PodActionMenuResult); ok {
 		switch result.Item.Action {
@@ -318,7 +329,12 @@ func (d Dashboard) Update(msg tea.Msg) (Dashboard, tea.Cmd) {
 		// Arrow key navigation between panels (2x2 grid)
 		// Layout: Logs(0) | Events(1)
 		//         Metrics(2) | Manifest(3)
+		// Note: When FocusMetrics is active, arrows are passed to MetricsPanel for inner box navigation
 		case msg.String() == "left":
+			if d.focus == FocusMetrics {
+				// Let MetricsPanel handle left/right for inner box navigation
+				break
+			}
 			switch d.focus {
 			case FocusEvents:
 				d.focus = FocusLogs
@@ -326,17 +342,17 @@ func (d Dashboard) Update(msg tea.Msg) (Dashboard, tea.Cmd) {
 				d.focus = FocusMetrics
 			case FocusLogs:
 				d.focus = FocusEvents // wrap
-			case FocusMetrics:
-				d.focus = FocusManifest // wrap
 			}
 			return d, nil
 
 		case msg.String() == "right":
+			if d.focus == FocusMetrics {
+				// Let MetricsPanel handle left/right for inner box navigation
+				break
+			}
 			switch d.focus {
 			case FocusLogs:
 				d.focus = FocusEvents
-			case FocusMetrics:
-				d.focus = FocusManifest
 			case FocusEvents:
 				d.focus = FocusLogs // wrap
 			case FocusManifest:
@@ -345,9 +361,11 @@ func (d Dashboard) Update(msg tea.Msg) (Dashboard, tea.Cmd) {
 			return d, nil
 
 		case msg.String() == "up":
+			if d.focus == FocusMetrics {
+				// Let MetricsPanel handle up/down for scrolling
+				break
+			}
 			switch d.focus {
-			case FocusMetrics:
-				d.focus = FocusLogs
 			case FocusManifest:
 				d.focus = FocusEvents
 			case FocusLogs:
@@ -358,21 +376,33 @@ func (d Dashboard) Update(msg tea.Msg) (Dashboard, tea.Cmd) {
 			return d, nil
 
 		case msg.String() == "down":
+			if d.focus == FocusMetrics {
+				// Let MetricsPanel handle up/down for scrolling
+				break
+			}
 			switch d.focus {
 			case FocusLogs:
 				d.focus = FocusMetrics
 			case FocusEvents:
 				d.focus = FocusManifest
-			case FocusMetrics:
-				d.focus = FocusLogs // wrap
 			case FocusManifest:
 				d.focus = FocusEvents // wrap
 			}
 			return d, nil
 
 		case key.Matches(msg, d.keys.Enter):
-			// Enter on Logs or Events panel toggles fullscreen
-			if d.focus == FocusLogs || d.focus == FocusEvents {
+			// Enter on Logs panel: if fullscreen, copy logs; otherwise toggle fullscreen
+			if d.focus == FocusLogs {
+				if d.fullscreen {
+					// In fullscreen, pass Enter to logs panel for copy
+					d.logs, cmd = d.logs.Update(msg)
+					return d, cmd
+				}
+				d.fullscreen = !d.fullscreen
+				return d, nil
+			}
+			// Enter on Events panel toggles fullscreen
+			if d.focus == FocusEvents {
 				d.fullscreen = !d.fullscreen
 				return d, nil
 			}
@@ -718,14 +748,120 @@ func (d Dashboard) renderDetailedResources() string {
 		b.WriteString("\n")
 	}
 
-	// Ingresses (after Services)
+	// Ingresses (after Services) - with detailed routing info
 	if d.related != nil && len(d.related.Ingresses) > 0 {
 		b.WriteString(styles.SubtitleStyle.Render("Ingresses"))
 		b.WriteString("\n")
 		for _, ing := range d.related.Ingresses {
-			b.WriteString(fmt.Sprintf("  • %s\n", styles.LogContainer.Render(ing.Name)))
-			b.WriteString(fmt.Sprintf("    Hosts:  %s\n", ing.Hosts))
-			b.WriteString(fmt.Sprintf("    Paths:  %s\n", ing.Paths))
+			// Ingress name and class
+			classInfo := ""
+			if ing.Class != "" {
+				classInfo = fmt.Sprintf(" (%s)", ing.Class)
+			}
+			b.WriteString(fmt.Sprintf("  • %s%s\n", styles.LogContainer.Render(ing.Name), styles.StatusMuted.Render(classInfo)))
+
+			// TLS info
+			if ing.TLS {
+				tlsInfo := styles.StatusRunning.Render("TLS enabled")
+				if len(ing.TLSSecrets) > 0 {
+					tlsInfo += fmt.Sprintf(" [%s]", strings.Join(ing.TLSSecrets, ", "))
+				}
+				b.WriteString(fmt.Sprintf("    %s\n", tlsInfo))
+			}
+
+			// Hosts
+			if len(ing.Hosts) > 0 {
+				b.WriteString(fmt.Sprintf("    Hosts:      %s\n", strings.Join(ing.Hosts, ", ")))
+			}
+
+			// Rules with paths (routing details)
+			for _, rule := range ing.Rules {
+				if len(rule.Paths) > 0 {
+					for _, path := range rule.Paths {
+						serviceStyle := lipgloss.NewStyle().Foreground(styles.Secondary)
+						routeInfo := fmt.Sprintf("%s → %s:%s",
+							path.Path,
+							serviceStyle.Render(path.ServiceName),
+							path.ServicePort)
+						if path.PathType != "" && path.PathType != "Prefix" {
+							routeInfo += fmt.Sprintf(" [%s]", path.PathType)
+						}
+						b.WriteString(fmt.Sprintf("    Route:      %s\n", routeInfo))
+					}
+				}
+			}
+
+			// Important annotations for debugging
+			if len(ing.Annotations) > 0 {
+				b.WriteString("    Annotations:\n")
+				for k, v := range ing.Annotations {
+					// Shorten annotation key for display
+					shortKey := k
+					if strings.Contains(k, "nginx.ingress.kubernetes.io/") {
+						shortKey = strings.Replace(k, "nginx.ingress.kubernetes.io/", "nginx/", 1)
+					} else if strings.Contains(k, "traefik.ingress.kubernetes.io/") {
+						shortKey = strings.Replace(k, "traefik.ingress.kubernetes.io/", "traefik/", 1)
+					} else if strings.Contains(k, "cert-manager.io/") {
+						shortKey = strings.Replace(k, "cert-manager.io/", "cert/", 1)
+					}
+					b.WriteString(fmt.Sprintf("      %s: %s\n", styles.StatusMuted.Render(shortKey), v))
+				}
+			}
+		}
+		b.WriteString("\n")
+	}
+
+	// VirtualServices (Istio) - after Ingresses
+	if d.related != nil && len(d.related.VirtualServices) > 0 {
+		b.WriteString(styles.SubtitleStyle.Render("VirtualServices (Istio)"))
+		b.WriteString("\n")
+		for _, vs := range d.related.VirtualServices {
+			b.WriteString(fmt.Sprintf("  • %s\n", styles.LogContainer.Render(vs.Name)))
+			if len(vs.Hosts) > 0 {
+				b.WriteString(fmt.Sprintf("    Hosts:     %s\n", strings.Join(vs.Hosts, ", ")))
+			}
+			if len(vs.Gateways) > 0 {
+				b.WriteString(fmt.Sprintf("    Gateways:  %s\n", strings.Join(vs.Gateways, ", ")))
+			}
+			for _, route := range vs.Routes {
+				destStyle := lipgloss.NewStyle().Foreground(styles.Secondary)
+				routeInfo := fmt.Sprintf("%s → %s:%d",
+					route.Match,
+					destStyle.Render(route.Destination),
+					route.Port)
+				if route.Weight > 0 && route.Weight < 100 {
+					routeInfo += fmt.Sprintf(" (weight: %d%%)", route.Weight)
+				}
+				b.WriteString(fmt.Sprintf("    Route:     %s\n", routeInfo))
+			}
+		}
+		b.WriteString("\n")
+	}
+
+	// Gateways (Istio) - show details of referenced gateways
+	if d.related != nil && len(d.related.Gateways) > 0 {
+		b.WriteString(styles.SubtitleStyle.Render("Gateways (Istio)"))
+		b.WriteString("\n")
+		for _, gw := range d.related.Gateways {
+			gwRef := gw.Name
+			if gw.Namespace != "" && gw.Namespace != d.pod.Namespace {
+				gwRef = gw.Namespace + "/" + gw.Name
+			}
+			b.WriteString(fmt.Sprintf("  • %s\n", styles.LogContainer.Render(gwRef)))
+			for _, srv := range gw.Servers {
+				protocolStyle := styles.StatusMuted
+				if srv.Protocol == "HTTPS" || srv.TLS != "" {
+					protocolStyle = styles.StatusRunning
+				}
+				portInfo := fmt.Sprintf("%d/%s", srv.Port, protocolStyle.Render(srv.Protocol))
+				if srv.TLS != "" {
+					portInfo += fmt.Sprintf(" [TLS: %s]", srv.TLS)
+				}
+				b.WriteString(fmt.Sprintf("    Port:      %s\n", portInfo))
+				if len(srv.Hosts) > 0 {
+					b.WriteString(fmt.Sprintf("    Hosts:     %s\n", strings.Join(srv.Hosts, ", ")))
+				}
+			}
 		}
 		b.WriteString("\n")
 	}

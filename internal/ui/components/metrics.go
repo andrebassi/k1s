@@ -12,16 +12,19 @@ import (
 )
 
 type MetricsPanel struct {
-	metrics      *k8s.PodMetrics
-	pod          *k8s.PodInfo
-	node         *k8s.NodeInfo
-	viewport     viewport.Model
-	ready        bool
-	width        int
-	height       int
-	available    bool
-	scrollOffset int      // Scroll offset for container resources
-	contentLines []string // Cached content lines for scrolling
+	metrics          *k8s.PodMetrics
+	pod              *k8s.PodInfo
+	node             *k8s.NodeInfo
+	viewport         viewport.Model
+	ready            bool
+	width            int
+	height           int
+	available        bool
+	leftScrollOffset int      // Scroll offset for container resources (left box)
+	rightScrollOffset int     // Scroll offset for node info (right box)
+	leftContentLines []string // Cached content lines for left box
+	rightContentLines []string // Cached content lines for right box
+	focusedBox       int      // 0 = left (Container Resources), 1 = right (Node Info)
 }
 
 func NewMetricsPanel() MetricsPanel {
@@ -36,20 +39,50 @@ func (m MetricsPanel) Update(msg tea.Msg) (MetricsPanel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "k": // Scroll up with k (vim style)
-			if m.scrollOffset > 0 {
-				m.scrollOffset--
+		case "left":
+			// Switch to left box (Container Resources)
+			m.focusedBox = 0
+			m.updateContent()
+			return m, nil
+		case "right":
+			// Switch to right box (Node Info) if node exists
+			if m.node != nil {
+				m.focusedBox = 1
 				m.updateContent()
 			}
 			return m, nil
-		case "j": // Scroll down with j (vim style)
-			maxScroll := len(m.contentLines) - m.getVisibleLines()
-			if maxScroll < 0 {
-				maxScroll = 0
+		case "up", "k": // Scroll up
+			if m.focusedBox == 0 {
+				if m.leftScrollOffset > 0 {
+					m.leftScrollOffset--
+					m.updateContent()
+				}
+			} else {
+				if m.rightScrollOffset > 0 {
+					m.rightScrollOffset--
+					m.updateContent()
+				}
 			}
-			if m.scrollOffset < maxScroll {
-				m.scrollOffset++
-				m.updateContent()
+			return m, nil
+		case "down", "j": // Scroll down
+			if m.focusedBox == 0 {
+				maxScroll := len(m.leftContentLines) - m.getVisibleLines()
+				if maxScroll < 0 {
+					maxScroll = 0
+				}
+				if m.leftScrollOffset < maxScroll {
+					m.leftScrollOffset++
+					m.updateContent()
+				}
+			} else {
+				maxScroll := len(m.rightContentLines) - m.getVisibleLines()
+				if maxScroll < 0 {
+					maxScroll = 0
+				}
+				if m.rightScrollOffset < maxScroll {
+					m.rightScrollOffset++
+					m.updateContent()
+				}
 			}
 			return m, nil
 		}
@@ -87,8 +120,17 @@ func (m *MetricsPanel) SetMetrics(metrics *k8s.PodMetrics) {
 }
 
 func (m *MetricsPanel) SetPod(pod *k8s.PodInfo) {
+	// Only reset scroll/focus if pod actually changed
+	podChanged := m.pod == nil || pod == nil ||
+		m.pod.Name != pod.Name || m.pod.Namespace != pod.Namespace
+
 	m.pod = pod
-	m.scrollOffset = 0 // Reset scroll on pod change
+
+	if podChanged {
+		m.leftScrollOffset = 0
+		m.rightScrollOffset = 0
+		m.focusedBox = 0
+	}
 	m.updateContent()
 }
 
@@ -152,11 +194,9 @@ func (m *MetricsPanel) updateContent() {
 		leftCol.WriteString(styles.StatusMuted.Render("Waiting for metrics..."))
 	}
 
-	// Build right column (node info)
+	// Build right column (node info) - without title, we add it later
 	var rightCol strings.Builder
 	if m.node != nil {
-		rightCol.WriteString(styles.SubtitleStyle.Render("Node Info"))
-		rightCol.WriteString("\n\n")
 		rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "Name:", styles.Truncate(m.node.Name, 25)))
 
 		statusStyle := styles.StatusRunning
@@ -176,8 +216,6 @@ func (m *MetricsPanel) updateContent() {
 			rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "Memory:", m.node.Memory))
 		}
 	} else if m.pod != nil && m.pod.Node != "" {
-		rightCol.WriteString(styles.SubtitleStyle.Render("Node"))
-		rightCol.WriteString("\n\n")
 		rightCol.WriteString(fmt.Sprintf("%s\n", m.pod.Node))
 	}
 
@@ -188,8 +226,9 @@ func (m *MetricsPanel) updateContent() {
 		rightBoxWidth := m.width - leftBoxWidth - 4
 		boxHeight := m.height - 2
 
-		// Cache content lines for scrolling
-		m.contentLines = strings.Split(leftCol.String(), "\n")
+		// Cache content lines for both boxes
+		m.leftContentLines = strings.Split(leftCol.String(), "\n")
+		m.rightContentLines = strings.Split(rightCol.String(), "\n")
 
 		// Calculate visible area
 		visibleLines := boxHeight - 4 // Account for title and padding
@@ -197,58 +236,89 @@ func (m *MetricsPanel) updateContent() {
 			visibleLines = 1
 		}
 
-		// Apply scroll offset
-		startLine := m.scrollOffset
-		endLine := startLine + visibleLines
-		if endLine > len(m.contentLines) {
-			endLine = len(m.contentLines)
+		// Build LEFT box content with scroll
+		var leftVisibleContent strings.Builder
+		leftTitle := "Container Resources"
+		if m.leftScrollOffset > 0 {
+			leftTitle += " " + styles.StatusMuted.Render("▲")
+		}
+		leftVisibleContent.WriteString(styles.SubtitleStyle.Render(leftTitle))
+		leftVisibleContent.WriteString("\n\n")
+
+		leftStartLine := m.leftScrollOffset
+		leftEndLine := leftStartLine + visibleLines
+		if leftEndLine > len(m.leftContentLines) {
+			leftEndLine = len(m.leftContentLines)
 		}
 
-		// Build visible content with scroll indicators
-		var visibleContent strings.Builder
-
-		// Title with scroll indicator
-		title := "Container Resources"
-		if m.scrollOffset > 0 {
-			title += " " + styles.StatusMuted.Render("▲")
-		}
-		visibleContent.WriteString(styles.SubtitleStyle.Render(title))
-		visibleContent.WriteString("\n\n")
-
-		// Add visible lines
-		if startLine < len(m.contentLines) {
-			for i := startLine; i < endLine; i++ {
-				visibleContent.WriteString(m.contentLines[i])
-				if i < endLine-1 {
-					visibleContent.WriteString("\n")
+		if leftStartLine < len(m.leftContentLines) {
+			for i := leftStartLine; i < leftEndLine; i++ {
+				leftVisibleContent.WriteString(m.leftContentLines[i])
+				if i < leftEndLine-1 {
+					leftVisibleContent.WriteString("\n")
 				}
 			}
 		}
 
-		// Add scroll down indicator if there's more content
-		if endLine < len(m.contentLines) {
-			visibleContent.WriteString("\n")
-			visibleContent.WriteString(styles.StatusMuted.Render("▼ more..."))
+		if leftEndLine < len(m.leftContentLines) {
+			leftVisibleContent.WriteString("\n")
+			leftVisibleContent.WriteString(styles.StatusMuted.Render("▼ more..."))
 		}
 
-		// Box style for container resources
+		// Build RIGHT box content with scroll
+		var rightVisibleContent strings.Builder
+		rightTitle := "Node Info"
+		if m.rightScrollOffset > 0 {
+			rightTitle += " " + styles.StatusMuted.Render("▲")
+		}
+		rightVisibleContent.WriteString(styles.SubtitleStyle.Render(rightTitle))
+		rightVisibleContent.WriteString("\n\n")
+
+		rightStartLine := m.rightScrollOffset
+		rightEndLine := rightStartLine + visibleLines
+		if rightEndLine > len(m.rightContentLines) {
+			rightEndLine = len(m.rightContentLines)
+		}
+
+		if rightStartLine < len(m.rightContentLines) {
+			for i := rightStartLine; i < rightEndLine; i++ {
+				rightVisibleContent.WriteString(m.rightContentLines[i])
+				if i < rightEndLine-1 {
+					rightVisibleContent.WriteString("\n")
+				}
+			}
+		}
+
+		if rightEndLine < len(m.rightContentLines) {
+			rightVisibleContent.WriteString("\n")
+			rightVisibleContent.WriteString(styles.StatusMuted.Render("▼ more..."))
+		}
+
+		// Box styles - focused box has primary color border
+		leftBorderColor := styles.Surface
+		rightBorderColor := styles.Surface
+		if m.focusedBox == 0 {
+			leftBorderColor = styles.Primary
+		} else {
+			rightBorderColor = styles.Primary
+		}
+
 		leftBoxStyle := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(styles.Surface).
+			BorderForeground(leftBorderColor).
 			Width(leftBoxWidth).
 			Height(boxHeight).
 			Padding(0, 1)
 
-		// Box style for node info
 		rightBoxStyle := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(styles.Surface).
+			BorderForeground(rightBorderColor).
 			Width(rightBoxWidth).
 			Height(boxHeight).
 			Padding(0, 1)
 
-		leftBox := leftBoxStyle.Render(visibleContent.String())
-		rightBox := rightBoxStyle.Render(rightCol.String())
+		leftBox := leftBoxStyle.Render(leftVisibleContent.String())
+		rightBox := rightBoxStyle.Render(rightVisibleContent.String())
 
 		combined := lipgloss.JoinHorizontal(lipgloss.Top, leftBox, rightBox)
 		m.viewport.SetContent(combined)

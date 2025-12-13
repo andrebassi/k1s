@@ -2,12 +2,14 @@ package components
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/andrebassi/k8sdebug/internal/k8s"
 	"github.com/andrebassi/k8sdebug/internal/ui/styles"
 )
@@ -44,6 +46,7 @@ type LogsPanel struct {
 	searching    bool     // true when search input is active
 	searchInput  textinput.Model
 	timeFilter   TimeFilter
+	copyStatus   string // Status message after copy
 }
 
 func NewLogsPanel() LogsPanel {
@@ -92,6 +95,16 @@ func (l LogsPanel) Update(msg tea.Msg) (LogsPanel, tea.Cmd) {
 
 		// Normal mode
 		switch msg.String() {
+		case "enter":
+			// Copy logs to clipboard
+			content := l.getPlainTextLogs()
+			err := CopyToClipboard(content)
+			if err == nil {
+				l.copyStatus = "Copied to clipboard!"
+			} else {
+				l.copyStatus = "Copy failed: " + err.Error()
+			}
+			return l, nil
 		case "/":
 			l.searching = true
 			l.searchInput.Focus()
@@ -180,11 +193,24 @@ func (l LogsPanel) View() string {
 		header.WriteString("\n")
 	}
 
-	return header.String() + l.viewport.View()
+	result := header.String() + l.viewport.View()
+
+	// Show copy status at bottom right
+	if l.copyStatus != "" {
+		padding := l.width - len(l.copyStatus) - 4
+		if padding < 0 {
+			padding = 0
+		}
+		statusMsg := lipgloss.NewStyle().Foreground(styles.Success).Bold(true).Render(l.copyStatus)
+		result += strings.Repeat(" ", padding) + statusMsg
+	}
+
+	return result
 }
 
 func (l *LogsPanel) SetLogs(logs []k8s.LogLine) {
 	l.logs = logs
+	l.copyStatus = "" // Clear copy status when logs update
 	l.updateContent()
 }
 
@@ -408,4 +434,34 @@ func (l LogsPanel) IsSearching() bool {
 
 func (l LogsPanel) Filter() string {
 	return l.filter
+}
+
+// getPlainTextLogs returns logs as plain text without ANSI codes
+func (l LogsPanel) getPlainTextLogs() string {
+	var content strings.Builder
+	filteredLogs := l.getFilteredLogs()
+
+	for _, log := range filteredLogs {
+		if !log.Timestamp.IsZero() {
+			ts := log.Timestamp.Format("15:04:05")
+			content.WriteString(ts)
+			content.WriteString(" ")
+		}
+
+		// Show container name when viewing all containers
+		if log.Container != "" && l.containerIdx == -1 && len(l.containers) > 1 {
+			content.WriteString(fmt.Sprintf("[%s] ", log.Container))
+		}
+
+		content.WriteString(log.Content)
+		content.WriteString("\n")
+	}
+
+	return content.String()
+}
+
+// stripLogsAnsi removes ANSI escape sequences from text
+func stripLogsAnsi(text string) string {
+	ansiRegex := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	return ansiRegex.ReplaceAllString(text, "")
 }
