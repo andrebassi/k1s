@@ -37,7 +37,7 @@ var (
 
 	ActivePanelStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
-				BorderForeground(Primary).
+				BorderForeground(Success).
 				Padding(0, 1)
 
 	PanelTitleStyle = lipgloss.NewStyle().

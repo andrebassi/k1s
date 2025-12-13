@@ -294,13 +294,13 @@ func (m *MetricsPanel) updateContent() {
 			rightVisibleContent.WriteString(styles.StatusMuted.Render("▼ more..."))
 		}
 
-		// Box styles - focused box has primary color border
+		// Box styles - focused box has green border
 		leftBorderColor := styles.Surface
 		rightBorderColor := styles.Surface
 		if m.focusedBox == 0 {
-			leftBorderColor = styles.Primary
+			leftBorderColor = styles.Success
 		} else {
-			rightBorderColor = styles.Primary
+			rightBorderColor = styles.Success
 		}
 
 		leftBoxStyle := lipgloss.NewStyle().
