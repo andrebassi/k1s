@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/andrebassi/k8sdebug/internal/ui/styles"
+	"github.com/andrebassi/k1s/internal/ui/styles"
 )
 
 // ResultViewerCopiedMsg is sent when content is copied to clipboard

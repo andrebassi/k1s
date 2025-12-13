@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/andrebassi/k8sdebug/internal/ui/styles"
+	"github.com/andrebassi/k1s/internal/ui/styles"
 )
 
 // ConfirmDialog is a modal confirmation dialog

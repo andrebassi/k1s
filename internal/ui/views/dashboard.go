@@ -8,10 +8,10 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/andrebassi/k8sdebug/internal/k8s"
-	"github.com/andrebassi/k8sdebug/internal/ui/components"
-	"github.com/andrebassi/k8sdebug/internal/ui/keys"
-	"github.com/andrebassi/k8sdebug/internal/ui/styles"
+	"github.com/andrebassi/k1s/internal/k8s"
+	"github.com/andrebassi/k1s/internal/ui/components"
+	"github.com/andrebassi/k1s/internal/ui/keys"
+	"github.com/andrebassi/k1s/internal/ui/styles"
 )
 
 type PanelFocus int
@@ -411,14 +411,14 @@ func (d Dashboard) Update(msg tea.Msg) (Dashboard, tea.Cmd) {
 				d.fullscreen = !d.fullscreen
 				return d, nil
 			}
-			// Enter on Resource Usage panel shows detailed resource info
-			if d.focus == FocusMetrics && d.pod != nil {
+			// Enter on Pod Details panel shows detailed resource info
+			if d.focus == FocusManifest && d.pod != nil {
 				content := d.renderDetailedResources()
 				d.resultViewer.Show("Resource Details: "+d.pod.Name, content, d.width-4, d.height-4)
 				return d, nil
 			}
-			// Enter on Pod Details panel shows kubectl describe
-			if d.focus == FocusManifest && d.pod != nil {
+			// Enter on Resource Usage panel shows kubectl describe
+			if d.focus == FocusMetrics && d.pod != nil {
 				d.statusMsg = "Loading describe..."
 				podName := d.pod.Name
 				namespace := d.namespace

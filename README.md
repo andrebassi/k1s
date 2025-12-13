@@ -1,4 +1,4 @@
-# k8sdebug
+# k1s
 
 A fast, keyboard-driven TUI for debugging Kubernetes workloads.
 
@@ -20,21 +20,21 @@ A fast, keyboard-driven TUI for debugging Kubernetes workloads.
 ### From Source
 
 ```bash
-git clone https://github.com/andrebassi/k8sdebug
-cd k8sdebug
+git clone https://github.com/andrebassi/k1s
+cd k1s
 make build
 ```
 
 ### Using Go
 
 ```bash
-go install github.com/andrebassi/k8sdebug/cmd/k8sdebug@latest
+go install github.com/andrebassi/k1s/cmd/k1s@latest
 ```
 
 ## Usage
 
 ```bash
-k8sdebug
+k1s
 ```
 
 ### Environment Variables
@@ -79,8 +79,8 @@ k8sdebug
 ## Project Structure
 
 ```
-k8sdebug/
-├── cmd/k8sdebug/       # Main application entry point
+k1s/
+├── cmd/k1s/       # Main application entry point
 ├── internal/
 │   ├── app/            # Application logic (bubbletea model)
 │   ├── config/         # Configuration handling

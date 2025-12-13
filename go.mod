@@ -1,4 +1,4 @@
-module github.com/andrebassi/k8sdebug
+module github.com/andrebassi/k1s
 
 go 1.21
 

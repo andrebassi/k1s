@@ -10,12 +10,12 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/andrebassi/k8sdebug/internal/config"
-	"github.com/andrebassi/k8sdebug/internal/k8s"
-	"github.com/andrebassi/k8sdebug/internal/ui/components"
-	"github.com/andrebassi/k8sdebug/internal/ui/keys"
-	"github.com/andrebassi/k8sdebug/internal/ui/styles"
-	"github.com/andrebassi/k8sdebug/internal/ui/views"
+	"github.com/andrebassi/k1s/internal/config"
+	"github.com/andrebassi/k1s/internal/k8s"
+	"github.com/andrebassi/k1s/internal/ui/components"
+	"github.com/andrebassi/k1s/internal/ui/keys"
+	"github.com/andrebassi/k1s/internal/ui/styles"
+	"github.com/andrebassi/k1s/internal/ui/views"
 )
 
 type ViewState int
@@ -54,6 +54,9 @@ type Model struct {
 	// State tracking for reactive log fetching
 	lastShowPrevious bool
 	lastLogContainer string
+
+	// Flag to indicate we should load resources on init (when -n flag used)
+	startWithResources bool
 }
 
 type loadedMsg struct {
@@ -117,7 +120,25 @@ type nodePodLoadedMsg struct {
 	err      error
 }
 
+type initialResourcesLoadedMsg struct {
+	namespaces []string
+	nodes      []k8s.NodeInfo
+	pods       []k8s.PodInfo
+	configmaps []k8s.ConfigMapInfo
+	secrets    []k8s.SecretInfo
+	err        error
+}
+
+// Options for creating a new app model
+type Options struct {
+	Namespace string // Initial namespace to select
+}
+
 func New() (*Model, error) {
+	return NewWithOptions(Options{})
+}
+
+func NewWithOptions(opts Options) (*Model, error) {
 	client, err := k8s.NewClient()
 	if err != nil {
 		return nil, err
@@ -128,16 +149,28 @@ func New() (*Model, error) {
 		cfg = config.DefaultConfig()
 	}
 
-	client.SetNamespace(cfg.LastNamespace)
+	// Use provided namespace or fall back to config
+	initialNamespace := cfg.LastNamespace
+	startInResources := false
+	if opts.Namespace != "" {
+		initialNamespace = opts.Namespace
+		startInResources = true
+	}
+	client.SetNamespace(initialNamespace)
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = styles.SpinnerStyle
 
+	navigator := components.NewNavigator()
+	if startInResources {
+		navigator.SetMode(components.ModeResources)
+	}
+
 	return &Model{
 		k8sClient:          client,
 		config:             cfg,
-		navigator:          components.NewNavigator(),
+		navigator:          navigator,
 		dashboard:          views.NewDashboard(),
 		statusBar:          components.NewStatusBar(),
 		help:               components.NewHelpPanel(),
@@ -149,10 +182,18 @@ func New() (*Model, error) {
 		view:               ViewNavigator,
 		loading:            true,
 		keys:               keys.DefaultKeyMap(),
+		startWithResources: startInResources,
 	}, nil
 }
 
 func (m Model) Init() tea.Cmd {
+	if m.startWithResources {
+		// When -n flag is used, load resources directly
+		return tea.Batch(
+			m.spinner.Tick,
+			m.loadInitialDataWithResources(),
+		)
+	}
 	return tea.Batch(
 		m.spinner.Tick,
 		m.loadInitialData(),
@@ -198,6 +239,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 			return m, nil
 		}
+		m.navigator.SetPods(msg.pods)
+		m.navigator.SetConfigMaps(msg.configmaps)
+		m.navigator.SetSecrets(msg.secrets)
+		m.navigator.SetMode(components.ModeResources)
+		return m, nil
+
+	case initialResourcesLoadedMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.err = msg.err
+			return m, nil
+		}
+		m.navigator.SetNamespaces(msg.namespaces)
+		m.nodes = msg.nodes
 		m.navigator.SetPods(msg.pods)
 		m.navigator.SetConfigMaps(msg.configmaps)
 		m.navigator.SetSecrets(msg.secrets)
@@ -954,6 +1009,35 @@ func (m *Model) loadInitialData() tea.Cmd {
 		return loadedMsg{
 			namespaces: namespaces,
 			nodes:      nodes,
+		}
+	}
+}
+
+func (m *Model) loadInitialDataWithResources() tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+
+		namespaces, err := m.k8sClient.ListNamespaces(ctx)
+		if err != nil {
+			return initialResourcesLoadedMsg{err: err}
+		}
+
+		nodes, _ := k8s.ListNodes(ctx, m.k8sClient.Clientset())
+
+		// Load resources for the specified namespace
+		pods, err := k8s.ListAllPods(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace())
+		if err != nil {
+			return initialResourcesLoadedMsg{err: err}
+		}
+		configmaps, _ := k8s.ListConfigMaps(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace())
+		secrets, _ := k8s.ListSecrets(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace())
+
+		return initialResourcesLoadedMsg{
+			namespaces: namespaces,
+			nodes:      nodes,
+			pods:       pods,
+			configmaps: configmaps,
+			secrets:    secrets,
 		}
 	}
 }

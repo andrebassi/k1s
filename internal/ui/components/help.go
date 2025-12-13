@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/andrebassi/k8sdebug/internal/ui/styles"
+	"github.com/andrebassi/k1s/internal/ui/styles"
 )
 
 type HelpEntry struct {

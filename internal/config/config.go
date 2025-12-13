@@ -31,7 +31,7 @@ func configPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "k8sdebug", "config.json"), nil
+	return filepath.Join(home, ".config", "k1s", "config.json"), nil
 }
 
 func Load() (*Config, error) {

@@ -7,8 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/andrebassi/k8sdebug/internal/k8s"
-	"github.com/andrebassi/k8sdebug/internal/ui/styles"
+	"github.com/andrebassi/k1s/internal/k8s"
+	"github.com/andrebassi/k1s/internal/ui/styles"
 )
 
 // SecretViewer displays Secret data in a modal with decoded values and key selection

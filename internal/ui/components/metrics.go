@@ -7,8 +7,8 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/andrebassi/k8sdebug/internal/k8s"
-	"github.com/andrebassi/k8sdebug/internal/ui/styles"
+	"github.com/andrebassi/k1s/internal/k8s"
+	"github.com/andrebassi/k1s/internal/ui/styles"
 )
 
 type MetricsPanel struct {
@@ -197,7 +197,7 @@ func (m *MetricsPanel) updateContent() {
 	// Build right column (node info) - without title, we add it later
 	var rightCol strings.Builder
 	if m.node != nil {
-		rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "Name:", styles.Truncate(m.node.Name, 25)))
+		rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "Name:", m.node.Name))
 
 		statusStyle := styles.StatusRunning
 		if m.node.Status != "Ready" {
@@ -232,6 +232,9 @@ func (m *MetricsPanel) updateContent() {
 		// Build LEFT column content
 		var leftContent strings.Builder
 		leftTitleStyle := styles.SubtitleStyle
+		if m.focusedBox == 0 {
+			leftTitleStyle = lipgloss.NewStyle().Foreground(styles.Success).Bold(true).Italic(true)
+		}
 		leftTitle := "Container Resources"
 		if m.leftScrollOffset > 0 {
 			leftTitle += " ▲"
@@ -257,6 +260,9 @@ func (m *MetricsPanel) updateContent() {
 		// Build RIGHT column content
 		var rightContent strings.Builder
 		rightTitleStyle := styles.SubtitleStyle
+		if m.focusedBox == 1 {
+			rightTitleStyle = lipgloss.NewStyle().Foreground(styles.Success).Bold(true).Italic(true)
+		}
 		rightTitle := "Node Info"
 		if m.rightScrollOffset > 0 {
 			rightTitle += " ▲"

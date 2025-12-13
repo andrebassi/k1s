@@ -1,8 +1,8 @@
-# k8sdebug - Project Documentation
+# k1s - Project Documentation
 
 ## Project Overview
 
-k8sdebug is a Terminal User Interface (TUI) application for debugging Kubernetes workloads. It provides a fast, keyboard-driven interface to navigate, inspect, and manage Kubernetes resources without leaving the terminal.
+k1s is a Terminal User Interface (TUI) application for debugging Kubernetes workloads. It provides a fast, keyboard-driven interface to navigate, inspect, and manage Kubernetes resources without leaving the terminal.
 
 Inspired by [k9sight](https://github.com/doganarif/k9sight).
 
@@ -127,8 +127,8 @@ Navigate with:
 ## Project Structure
 
 ```
-k8sdebug/
-├── cmd/k8sdebug/
+k1s/
+├── cmd/k1s/
 │   └── main.go              # Application entry point
 ├── internal/
 │   ├── app/
@@ -239,21 +239,26 @@ Multiple ways to copy data:
 
 ## Configuration
 
+Command-line flags:
+- `-n, --namespace NS`: Go directly to resources view for namespace NS
+- `-h, --help`: Show help message
+- `-v, --version`: Show version information
+
 Environment variables:
 - `KUBECONFIG`: Path to kubeconfig file (default: `~/.kube/config`)
-- `K8SDEBUG_NAMESPACE`: Initial namespace (default: `default`)
+- `K1S_NAMESPACE`: Initial namespace (default: `default`)
 
 ## Build & Run
 
 ```bash
 # Build binary
-go build -o k8sdebug ./cmd/k8sdebug
-
-# Or use Makefile
-make build
+go build -o bin/k1s ./cmd/k1s
 
 # Run
-./k8sdebug
+./bin/k1s
+
+# Run with namespace (goes directly to resources view)
+./bin/k1s -n api
 ```
 
 ## Dependencies
@@ -276,6 +281,7 @@ make build
 6. **Arrow navigation** - Full arrow key support across all panels
 7. **Istio integration** - VirtualServices and Gateways display with dynamic client
 8. **Copy features** - Resource Details and Logs copy to clipboard
+9. **Namespace flag** - `-n namespace` flag to go directly to resources view
 
 ## Last Updated
 
