@@ -854,7 +854,8 @@ func (m Model) renderNodesPanel(width, height int) string {
 		b.WriteString(clearHint)
 		b.WriteString("\n\n")
 	} else {
-		b.WriteString("\n")
+		// Empty line to maintain consistent table position
+		b.WriteString("\n\n")
 	}
 
 	// Table header
