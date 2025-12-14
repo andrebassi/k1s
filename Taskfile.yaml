@@ -66,7 +66,7 @@ tasks:
       - go mod tidy
 
   release:
-    desc: Create a new release (usage: task release -- v0.2.0)
+    desc: "Create a new release (usage: task release -- v0.2.0)"
     cmds:
       - git tag {{.CLI_ARGS}}
       - git push k1s {{.CLI_ARGS}}
