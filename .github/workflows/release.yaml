@@ -453,4 +453,17 @@ jobs:
           CHOCO_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
         run: |
           cd chocolatey
-          choco push k1s.${{ steps.version.outputs.VERSION }}.nupkg --source https://push.chocolatey.org/ --api-key $env:CHOCO_API_KEY
+          # Try to push, but don't fail if package is pending moderation
+          $output = choco push k1s.${{ steps.version.outputs.VERSION }}.nupkg --source https://push.chocolatey.org/ --api-key $env:CHOCO_API_KEY 2>&1
+          $exitCode = $LASTEXITCODE
+          Write-Host $output
+
+          if ($exitCode -ne 0) {
+            if ($output -match "previous version in a submitted state") {
+              Write-Host "::warning::Chocolatey package k1s has a version pending moderation. Skipping push."
+              exit 0
+            } else {
+              Write-Host "::error::Failed to push to Chocolatey"
+              exit $exitCode
+            }
+          }
