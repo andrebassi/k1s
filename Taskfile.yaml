@@ -3,13 +3,17 @@ version: '3'
 vars:
   BINARY_NAME: k1s
   BUILD_DIR: ./bin
+  # VERSION can be overridden by env var (used in CI)
   VERSION:
-    sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+    sh: echo "${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
+  # Clean version without 'v' prefix for packages
+  VERSION_CLEAN:
+    sh: echo "{{.VERSION}}" | sed 's/^v//'
   COMMIT:
     sh: git rev-parse --short HEAD 2>/dev/null || echo "none"
   DATE:
     sh: date -u '+%Y-%m-%dT%H:%M:%SZ'
-  LDFLAGS: -s -w -X main.version={{.VERSION}} -X main.commit={{.COMMIT}} -X main.date={{.DATE}}
+  LDFLAGS: -s -w -X main.version={{.VERSION_CLEAN}} -X main.commit={{.COMMIT}} -X main.date={{.DATE}}
 
 tasks:
   default:
@@ -27,6 +31,40 @@ tasks:
       - "**/*.go"
     generates:
       - "{{.BUILD_DIR}}/{{.BINARY_NAME}}"
+
+  # ============================================
+  # CI Build Tasks (used by GitHub Actions)
+  # ============================================
+
+  ci:build:
+    desc: Build binary for CI (respects GOOS, GOARCH, GOARM, CGO_ENABLED env vars)
+    vars:
+      OUTPUT: '{{.OUTPUT | default "dist/k1s"}}'
+    cmds:
+      - mkdir -p dist
+      - go build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.OUTPUT}} ./cmd/k1s
+
+  ci:package:deb:
+    desc: Build .deb package for CI
+    vars:
+      ARCH: '{{.ARCH | default "amd64"}}'
+    cmds:
+      - nfpm pkg --packager deb --target dist/k1s_{{.VERSION_CLEAN}}_{{.ARCH}}.deb
+
+  ci:package:rpm:
+    desc: Build .rpm package for CI
+    vars:
+      ARCH: '{{.ARCH | default "amd64"}}'
+    cmds:
+      - nfpm pkg --packager rpm --target dist/k1s-{{.VERSION_CLEAN}}-1.{{.ARCH}}.rpm
+
+  ci:checksums:
+    desc: Generate checksums for release artifacts
+    cmds:
+      - |
+        cd dist
+        sha256sum k1s-* k1s_*.deb k1s-*.rpm 2>/dev/null | sort > checksums.txt
+        cat checksums.txt
 
   run:
     desc: Run k1s

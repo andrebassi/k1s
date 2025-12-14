@@ -43,15 +43,18 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      - name: Get version
-        id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+      - name: Install Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
 
       - name: Setup Android NDK
         if: matrix.cgo == true
@@ -65,19 +68,10 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           GOARM: ${{ matrix.goarm }}
-        run: |
-          mkdir -p dist
-
-          if [ "${{ matrix.cgo }}" = "true" ]; then
-            # Android build with CGO
-            export CGO_ENABLED=1
-            export CC=${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
-            export CXX=${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang++
-          else
-            export CGO_ENABLED=0
-          fi
-
-          go build -trimpath -ldflags "-s -w -X main.version=${{ steps.version.outputs.VERSION }} -X main.commit=${GITHUB_SHA::7} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o dist/k1s-${{ matrix.name }}${{ matrix.ext }} ./cmd/k1s
+          CGO_ENABLED: ${{ matrix.cgo == true && '1' || '0' }}
+          CC: ${{ matrix.cgo == true && format('{0}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang', steps.setup-ndk.outputs.ndk-path) || '' }}
+          CXX: ${{ matrix.cgo == true && format('{0}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang++', steps.setup-ndk.outputs.ndk-path) || '' }}
+        run: task ci:build OUTPUT=dist/k1s-${{ matrix.name }}${{ matrix.ext }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -99,16 +93,19 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
 
       - name: Download Linux binary
         uses: actions/download-artifact@v4
         with:
           name: k1s-${{ matrix.binary }}
           path: dist
-
-      - name: Get version
-        id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
       - name: Install nFPM
         run: |
@@ -118,19 +115,17 @@ jobs:
 
       - name: Build .deb package
         env:
-          VERSION: ${{ steps.version.outputs.VERSION }}
+          VERSION: ${{ github.ref_name }}
           GOARCH: ${{ matrix.arch }}
           BINARY: ${{ matrix.binary }}
-        run: |
-          nfpm pkg --packager deb --target dist/k1s_${{ steps.version.outputs.VERSION }}_${{ matrix.arch }}.deb
+        run: task ci:package:deb ARCH=${{ matrix.arch }}
 
       - name: Build .rpm package
         env:
-          VERSION: ${{ steps.version.outputs.VERSION }}
+          VERSION: ${{ github.ref_name }}
           GOARCH: ${{ matrix.arch }}
           BINARY: ${{ matrix.binary }}
-        run: |
-          nfpm pkg --packager rpm --target dist/k1s-${{ steps.version.outputs.VERSION }}-1.${{ matrix.arch }}.rpm
+        run: task ci:package:rpm ARCH=${{ matrix.arch }}
 
       - name: Upload deb artifact
         uses: actions/upload-artifact@v4
@@ -151,6 +146,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
 
       - name: Get version
         id: version
@@ -166,10 +168,7 @@ jobs:
         run: ls -la dist/
 
       - name: Create checksums
-        run: |
-          cd dist
-          sha256sum k1s-* k1s_*.deb 2>/dev/null | sort > checksums.txt
-          cat checksums.txt
+        run: task ci:checksums
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
