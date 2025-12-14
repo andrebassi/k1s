@@ -64,3 +64,72 @@ tasks:
     desc: Tidy go modules
     cmds:
       - go mod tidy
+
+  release:
+    desc: Create a new release (usage: task release -- v0.2.0)
+    cmds:
+      - git tag {{.CLI_ARGS}}
+      - git push k1s {{.CLI_ARGS}}
+      - echo "Release {{.CLI_ARGS}} created! Check https://github.com/andrebassi/k1s/actions"
+
+  macports:update:
+    desc: Update MacPorts Portfile checksums for a release
+    vars:
+      TAG:
+        sh: git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.1"
+      VERSION:
+        sh: git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.1.1"
+    cmds:
+      - |
+        echo "Updating Portfile for {{.TAG}}..."
+        TARBALL_URL="https://github.com/andrebassi/k1s/archive/refs/tags/{{.TAG}}.tar.gz"
+        echo "Downloading tarball from $TARBALL_URL"
+
+        SHA256=$(curl -sL "$TARBALL_URL" | shasum -a 256 | awk '{print $1}')
+        RMD160=$(curl -sL "$TARBALL_URL" | openssl dgst -rmd160 | awk '{print $2}')
+        SIZE=$(curl -sL "$TARBALL_URL" | wc -c | tr -d ' ')
+
+        echo ""
+        echo "=== Portfile checksums for {{.TAG}} ==="
+        echo "go.setup            github.com/andrebassi/k1s {{.VERSION}} v"
+        echo ""
+        echo "checksums           rmd160  $RMD160 \\"
+        echo "                    sha256  $SHA256 \\"
+        echo "                    size    $SIZE"
+        echo ""
+        echo "Update ports/sysutils/k1s/Portfile with these values"
+
+  macports:submit:
+    desc: Instructions for submitting to MacPorts
+    cmds:
+      - |
+        echo ""
+        echo "=== MacPorts Submission Guide ==="
+        echo ""
+        echo "1. Fork the macports-ports repository:"
+        echo "   https://github.com/macports/macports-ports"
+        echo ""
+        echo "2. Clone your fork:"
+        echo "   git clone https://github.com/YOUR_USERNAME/macports-ports"
+        echo "   cd macports-ports"
+        echo ""
+        echo "3. Create a new branch:"
+        echo "   git checkout -b add-k1s-port"
+        echo ""
+        echo "4. Copy the Portfile:"
+        echo "   mkdir -p sysutils/k1s"
+        echo "   cp /path/to/k1s/ports/sysutils/k1s/Portfile sysutils/k1s/"
+        echo ""
+        echo "5. Test locally (requires MacPorts installed):"
+        echo "   sudo port -v test sysutils/k1s"
+        echo ""
+        echo "6. Commit and push:"
+        echo "   git add sysutils/k1s/Portfile"
+        echo "   git commit -m 'sysutils/k1s: new port, Kubernetes TUI Debugger'"
+        echo "   git push origin add-k1s-port"
+        echo ""
+        echo "7. Create Pull Request at:"
+        echo "   https://github.com/macports/macports-ports/pulls"
+        echo ""
+        echo "Reference: https://guide.macports.org/chunked/project.contributing.html"
+        echo ""

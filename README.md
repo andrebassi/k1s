@@ -1,28 +1,76 @@
 # k1s
 
-A fast, keyboard-driven TUI for debugging Kubernetes workloads.
+Kubernetes TUI Debugger - One screen to see why your pod is broken.
+
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Go Version](https://img.shields.io/badge/go-1.21+-00ADD8.svg)
 
 ## Features
 
-- Navigate deployments, statefulsets, daemonsets
-- View pod logs with search and filtering
-- Monitor events and resource metrics
+- Real-time container logs with filtering and error highlighting
+- Pod events with Warning/Normal type filtering
+- Resource metrics (CPU/Memory from metrics-server)
+- HPA monitoring with KEDA support
+- ConfigMaps/Secrets viewing and cross-namespace copy
+- Navigate deployments, statefulsets, daemonsets, jobs, cronjobs
 - Scale and restart workloads
-- Vim-style navigation
-
-## Requirements
-
-- Go 1.21+
-- kubectl configured with cluster access
+- Vim-style keyboard navigation
 
 ## Installation
+
+### Via Homebrew (macOS/Linux)
+
+```bash
+brew tap andrebassi/k1s
+brew install k1s
+```
+
+### Via MacPorts (macOS)
+
+```bash
+sudo port install k1s
+```
+
+> **Note:** MacPorts submission pending. See [ports/sysutils/k1s](ports/sysutils/k1s/Portfile) for the Portfile.
+
+### Download Binary
+
+Download the latest release for your platform:
+
+```bash
+# macOS Apple Silicon
+curl -L -o k1s https://github.com/andrebassi/k1s/releases/latest/download/k1s-darwin-arm64
+chmod +x k1s
+sudo mv k1s /usr/local/bin/
+
+# macOS Intel
+curl -L -o k1s https://github.com/andrebassi/k1s/releases/latest/download/k1s-darwin-amd64
+chmod +x k1s
+sudo mv k1s /usr/local/bin/
+
+# Linux amd64
+curl -L -o k1s https://github.com/andrebassi/k1s/releases/latest/download/k1s-linux-amd64
+chmod +x k1s
+sudo mv k1s /usr/local/bin/
+
+# Linux arm64
+curl -L -o k1s https://github.com/andrebassi/k1s/releases/latest/download/k1s-linux-arm64
+chmod +x k1s
+sudo mv k1s /usr/local/bin/
+
+# Linux armv7 (Raspberry Pi)
+curl -L -o k1s https://github.com/andrebassi/k1s/releases/latest/download/k1s-linux-armv7
+chmod +x k1s
+sudo mv k1s /usr/local/bin/
+```
 
 ### From Source
 
 ```bash
 git clone https://github.com/andrebassi/k1s
 cd k1s
-make build
+task build
+./bin/k1s
 ```
 
 ### Using Go
@@ -31,91 +79,105 @@ make build
 go install github.com/andrebassi/k1s/cmd/k1s@latest
 ```
 
+## Requirements
+
+- kubectl configured with cluster access
+- metrics-server (optional, for CPU/Memory metrics)
+
 ## Usage
 
 ```bash
+# Start k1s
 k1s
+
+# Start with specific namespace
+k1s -n my-namespace
+
+# Show version
+k1s --version
+
+# Show help
+k1s --help
 ```
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `KUBECONFIG` | Path to kubeconfig file | `~/.kube/config` |
-| `K8SDEBUG_NAMESPACE` | Default namespace | `default` |
 
 ## Key Bindings
 
-### Navigation
+### Global Navigation
 
 | Key | Action |
 |-----|--------|
+| `Tab` / `Shift+Tab` | Next/Previous section |
 | `j` / `↓` | Move down |
 | `k` / `↑` | Move up |
-| `enter` | Select item |
-| `esc` | Go back |
-| `g` | Go to top |
-| `G` | Go to bottom |
-
-### Views
-
-| Key | Action |
-|-----|--------|
-| `w` | Workloads view |
-| `p` | Pods view |
-| `l` | Logs view |
-| `e` | Events view |
-| `n` | Namespaces |
-
-### Actions
-
-| Key | Action |
-|-----|--------|
-| `r` | Refresh |
+| `g` / `G` | Go to top/bottom |
+| `Enter` | Select / Expand |
+| `Esc` | Go back / Close |
+| `r` | Refresh data |
+| `?` | Show help |
 | `q` | Quit |
-| `ctrl+u` | Page up (logs) |
-| `ctrl+d` | Page down (logs) |
 
-## Project Structure
+### Resource Views
+
+| Key | Action |
+|-----|--------|
+| `/` | Search / Filter |
+| `c` | Clear filter |
+| `a` | Actions menu |
+| `d` | Delete (on Terminating namespaces) |
+
+### Logs Panel
+
+| Key | Action |
+|-----|--------|
+| `f` | Toggle follow mode |
+| `e` | Jump to next error |
+| `[` / `]` | Switch container |
+| `T` | Cycle time filter |
+| `P` | Previous container logs |
+
+## Screenshots
 
 ```
-k1s/
-├── cmd/k1s/       # Main application entry point
-├── internal/
-│   ├── app/            # Application logic (bubbletea model)
-│   ├── config/         # Configuration handling
-│   ├── k8s/            # Kubernetes client operations
-│   └── ui/             # TUI components (list, logs, styles)
-├── go.mod
-├── go.sum
-├── Makefile
-└── README.md
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              k1s - Namespace: prod                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ PODS                                                                         │
+│ ▶ api-server-7d8f9c6b5-abc12    Running    1/1    0    2d                   │
+│   worker-5f4e3d2c1-def34        Running    1/1    5    1d                   │
+│   scheduler-9a8b7c6d-ghi56      Running    1/1    0    3d                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ HPA                                                                          │
+│   api-server    Deployment/api-server    cpu: 45%/80%    2    10    3       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ CONFIGMAPS                                                                   │
+│   app-config                    3 keys                                       │
+│   nginx-config                  1 key                                        │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Development
 
-### Build
-
 ```bash
-make build
-```
+# Build
+task build
 
-### Run
+# Run
+task run
 
-```bash
-make run
-```
+# Clean
+task clean
 
-### Clean
+# Format code
+task fmt
 
-```bash
-make clean
+# Run tests
+task test
 ```
 
 ## Inspired by
 
-- [k9sight](https://github.com/doganarif/k9sight) - Original TUI for Kubernetes debugging
 - [k9s](https://k9scli.io/) - Kubernetes CLI to manage clusters
+- [k9sight](https://github.com/doganarif/k9sight) - Original TUI for Kubernetes debugging
 
 ## License
 

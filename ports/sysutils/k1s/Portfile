@@ -1,0 +1,44 @@
+# -*- coding: utf-8; mode: tcl; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- vim:fenc=utf-8:ft=tcl:et:sw=4:ts=4:sts=4
+
+PortSystem          1.0
+PortGroup           golang 1.0
+
+go.setup            github.com/andrebassi/k1s 0.1.1 v
+go.offline_build    no
+revision            0
+
+homepage            https://github.com/andrebassi/k1s
+
+description         Kubernetes TUI Debugger - One screen to see why your pod is broken
+
+long_description    k1s is a terminal-based user interface (TUI) for debugging \
+                    Kubernetes workloads. It provides real-time logs, events, \
+                    metrics, and resource inspection in a single dashboard view. \
+                    Features include HPA monitoring with KEDA support, ConfigMaps \
+                    and Secrets viewing, cross-namespace resource copy, and more.
+
+categories          sysutils
+installs_libs       no
+license             MIT
+maintainers         {github.com:andrebassi @andrebassi} \
+                    openmaintainer
+
+checksums           rmd160  89b275cd12282e961d7c8fd2176d729f5c39dd08 \
+                    sha256  0353750c249c36653b52df5d86c8f8c1deee5b7a738b070735f5ebecbce9e6df \
+                    size    106376
+
+build.env-append    CGO_ENABLED=0
+build.args          -o ${worksrcpath}/k1s \
+                    -trimpath \
+                    -ldflags " \
+                        -s \
+                        -w \
+                        -X main.version=${version} \
+                        -X main.commit=macports \
+                        -X main.date=unknown \
+                    " \
+                    ./cmd/k1s
+
+destroot {
+    xinstall -m 0755 ${worksrcpath}/k1s ${destroot}${prefix}/bin/
+}
