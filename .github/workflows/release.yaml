@@ -28,6 +28,10 @@ jobs:
             goarch: arm64
             name: linux-arm64
           - goos: linux
+            goarch: arm64
+            name: android-arm64
+            buildmode: pie
+          - goos: linux
             goarch: arm
             goarm: "7"
             name: linux-armv7
@@ -57,7 +61,11 @@ jobs:
           CGO_ENABLED: 0
         run: |
           mkdir -p dist
-          go build -trimpath -ldflags "-s -w -X main.version=${{ steps.version.outputs.VERSION }} -X main.commit=${GITHUB_SHA::7} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o dist/k1s-${{ matrix.name }}${{ matrix.ext }} ./cmd/k1s
+          BUILDMODE=""
+          if [ "${{ matrix.buildmode }}" = "pie" ]; then
+            BUILDMODE="-buildmode=pie"
+          fi
+          go build $BUILDMODE -trimpath -ldflags "-s -w -X main.version=${{ steps.version.outputs.VERSION }} -X main.commit=${GITHUB_SHA::7} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o dist/k1s-${{ matrix.name }}${{ matrix.ext }} ./cmd/k1s
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -163,6 +171,7 @@ jobs:
             dist/k1s-darwin-arm64
             dist/k1s-linux-amd64
             dist/k1s-linux-arm64
+            dist/k1s-android-arm64
             dist/k1s-linux-armv7
             dist/k1s-windows-amd64.exe
             dist/*.deb
@@ -182,6 +191,7 @@ jobs:
             | Linux | x86_64 (amd64) | `k1s-linux-amd64` |
             | Linux | ARM64 | `k1s-linux-arm64` |
             | Linux | ARMv7 (Raspberry Pi) | `k1s-linux-armv7` |
+            | Android | Termux (arm64) | `k1s-android-arm64` |
             | Windows | x86_64 (amd64) | `k1s-windows-amd64.exe` |
             | Debian/Ubuntu | x86_64 | `k1s_${{ steps.version.outputs.VERSION }}_amd64.deb` |
             | Debian/Ubuntu | ARM64 | `k1s_${{ steps.version.outputs.VERSION }}_arm64.deb` |
@@ -217,6 +227,12 @@ jobs:
             ```bash
             curl -LO https://github.com/andrebassi/k1s/releases/download/${{ github.ref_name }}/k1s-${{ steps.version.outputs.VERSION }}-1.amd64.rpm
             sudo dnf install ./k1s-${{ steps.version.outputs.VERSION }}-1.amd64.rpm
+            ```
+
+            **Android (Termux):**
+            ```bash
+            curl -L -o $PREFIX/bin/k1s https://github.com/andrebassi/k1s/releases/download/${{ github.ref_name }}/k1s-android-arm64
+            chmod +x $PREFIX/bin/k1s
             ```
 
             **Manual (Linux/macOS):**

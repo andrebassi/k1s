@@ -143,6 +143,12 @@ get_latest_version() {
 # Build download URL
 build_download_url() {
     local binary_name="k1s-${OS}-${ARCH}"
+
+    # Use android-arm64 binary for Termux (requires PIE)
+    if [[ "$IS_TERMUX" == "true" ]] && [[ "$ARCH" == "arm64" ]]; then
+        binary_name="k1s-android-arm64"
+    fi
+
     if [[ "$OS" == "windows" ]]; then
         binary_name="${binary_name}.exe"
     fi

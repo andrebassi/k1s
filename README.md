@@ -115,11 +115,11 @@ paru -S k1s-bin
 ### Via Termux (Android)
 
 ```bash
-# Install via curl
+# Install via curl (recommended)
 curl -sSL https://cdn.jsdelivr.net/gh/andrebassi/k1s@main/scripts/install.sh | bash
 
-# Or download directly
-curl -L -o $PREFIX/bin/k1s https://github.com/andrebassi/k1s/releases/latest/download/k1s-linux-arm64
+# Or download directly (PIE binary for Android)
+curl -L -o $PREFIX/bin/k1s https://github.com/andrebassi/k1s/releases/latest/download/k1s-android-arm64
 chmod +x $PREFIX/bin/k1s
 ```
 
@@ -131,6 +131,8 @@ pkg install curl kubectl
 # Configure kubectl with your cluster
 # Copy your kubeconfig to ~/.kube/config
 ```
+
+> **Note:** The `k1s-android-arm64` binary is built with PIE (Position Independent Executable) support required by Android 5.0+.
 
 ### Via apt-get (Debian/Ubuntu)
 
@@ -178,7 +180,7 @@ sudo port install k1s
 | Linux | x86_64 (amd64) | [k1s-linux-amd64](https://github.com/andrebassi/k1s/releases/latest/download/k1s-linux-amd64) |
 | Linux | ARM64 | [k1s-linux-arm64](https://github.com/andrebassi/k1s/releases/latest/download/k1s-linux-arm64) |
 | Linux | ARMv7 (Raspberry Pi) | [k1s-linux-armv7](https://github.com/andrebassi/k1s/releases/latest/download/k1s-linux-armv7) |
-| Android | Termux (arm64) | [k1s-linux-arm64](https://github.com/andrebassi/k1s/releases/latest/download/k1s-linux-arm64) |
+| Android | Termux (arm64) | [k1s-android-arm64](https://github.com/andrebassi/k1s/releases/latest/download/k1s-android-arm64) |
 | Windows | x86_64 (amd64) | [k1s-windows-amd64.exe](https://github.com/andrebassi/k1s/releases/latest/download/k1s-windows-amd64.exe) |
 
 ```bash
