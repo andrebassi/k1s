@@ -67,6 +67,16 @@ jobs:
           fi
           go build $BUILDMODE -trimpath -ldflags "-s -w -X main.version=${{ steps.version.outputs.VERSION }} -X main.commit=${GITHUB_SHA::7} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o dist/k1s-${{ matrix.name }}${{ matrix.ext }} ./cmd/k1s
 
+      - name: Fix Android binary TLS alignment
+        if: matrix.name == 'android-arm64'
+        run: |
+          # Install termux-elf-cleaner
+          git clone https://github.com/termux/termux-elf-cleaner.git /tmp/termux-elf-cleaner
+          cd /tmp/termux-elf-cleaner
+          make
+          # Fix TLS alignment for Android/Termux
+          ./termux-elf-cleaner $GITHUB_WORKSPACE/dist/k1s-android-arm64
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
