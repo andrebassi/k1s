@@ -44,9 +44,11 @@ type Model struct {
 	spinner            spinner.Model
 	workloadActionMenu component.WorkloadActionMenu
 	confirmDialog      component.ConfirmDialog
-	configMapViewer    component.ConfigMapViewer
-	secretViewer       component.SecretViewer
-	view               ViewState
+	configMapViewer        component.ConfigMapViewer
+	secretViewer           component.SecretViewer
+	dockerRegistryViewer   component.DockerRegistryViewer
+	isDockerRegistrySecret bool // Track if we're viewing a docker registry secret
+	view                   ViewState
 	width              int
 	height             int
 	loading            bool
@@ -195,10 +197,11 @@ func NewWithOptions(opts Options) (*Model, error) {
 		help:               component.NewHelpPanel(),
 		spinner:            s,
 		workloadActionMenu: component.NewWorkloadActionMenu(),
-		confirmDialog:      component.NewConfirmDialog(),
-		configMapViewer:    component.NewConfigMapViewer(),
-		secretViewer:       component.NewSecretViewer(),
-		view:               ViewNavigator,
+		confirmDialog:        component.NewConfirmDialog(),
+		configMapViewer:      component.NewConfigMapViewer(),
+		secretViewer:         component.NewSecretViewer(),
+		dockerRegistryViewer: component.NewDockerRegistryViewer(),
+		view:                 ViewNavigator,
 		loading:            true,
 		keys:               keys.DefaultKeyMap(),
 		startWithResources: startInResources,
@@ -305,9 +308,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = "Error loading Secret: " + msg.err.Error()
 			return m, nil
 		}
-		m.secretViewer.SetSize(m.width, m.height)
-		m.secretViewer.SetNamespaces(m.navigator.GetNamespaces())
-		m.secretViewer.Show(msg.data, m.k8sClient.Namespace())
+		// Show appropriate viewer based on secret type
+		if m.isDockerRegistrySecret {
+			m.dockerRegistryViewer.SetSize(m.width, m.height)
+			m.dockerRegistryViewer.SetNamespaces(m.navigator.GetNamespaces())
+			m.dockerRegistryViewer.Show(msg.data, m.k8sClient.Namespace())
+		} else {
+			m.secretViewer.SetSize(m.width, m.height)
+			m.secretViewer.SetNamespaces(m.navigator.GetNamespaces())
+			m.secretViewer.Show(msg.data, m.k8sClient.Namespace())
+		}
+		return m, nil
+
+	case component.DockerRegistryViewerClosed:
+		// Docker Registry viewer was closed
 		return m, nil
 
 	case component.SecretViewerClosed:
@@ -383,6 +397,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.statusMsg = statusText
 		m.configMapViewer.SetStatusMsg(statusText)
+		// Clear status after showing result
+		return m, clearStatusAfter(3 * time.Second)
+
+	case component.DockerRegistryCopyProgress:
+		// Continue copying to next namespace
+		statusText := fmt.Sprintf("Copying to %s... (%d done)", msg.CurrentNamespace, msg.SuccessCount+msg.ErrorCount)
+		m.statusMsg = statusText
+		m.dockerRegistryViewer.SetStatusMsg(statusText)
+		return m, m.copyDockerRegistryToSingleNamespace(msg.SourceNamespace, msg.SecretName, msg.CurrentNamespace, msg.Remaining, msg.SuccessCount, msg.ErrorCount)
+
+	case component.DockerRegistryCopyResult:
+		// Show result
+		var statusText string
+		if msg.Success {
+			statusText = msg.Message
+		} else if msg.Err != nil {
+			statusText = "Error: " + msg.Err.Error()
+		} else {
+			statusText = msg.Message
+		}
+		m.statusMsg = statusText
+		m.dockerRegistryViewer.SetStatusMsg(statusText)
 		// Clear status after showing result
 		return m, clearStatusAfter(3 * time.Second)
 
@@ -532,6 +568,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMsg = ""
 		m.secretViewer.SetStatusMsg("")
 		m.configMapViewer.SetStatusMsg("")
+		m.dockerRegistryViewer.SetStatusMsg("")
 		return m, nil
 
 	case view.ScaleRequestMsg:
@@ -631,6 +668,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusMsg = statusText
 				m.configMapViewer.SetStatusMsg(statusText)
 				return m, m.copyConfigMapToSingleNamespace(req.SourceNamespace, req.ConfigMapName, req.TargetNamespace, nil, 0, 0)
+			}
+			return m, cmd
+		}
+
+		// Docker Registry viewer takes priority
+		if m.dockerRegistryViewer.IsVisible() {
+			m.dockerRegistryViewer, cmd = m.dockerRegistryViewer.Update(msg)
+			// Check for pending copy request
+			if req := m.dockerRegistryViewer.GetPendingRequest(); req != nil {
+				// Handle the copy request directly
+				if req.AllNamespaces {
+					var namespaces []string
+					for _, ns := range req.Namespaces {
+						if ns != req.SourceNamespace {
+							namespaces = append(namespaces, ns)
+						}
+					}
+					if len(namespaces) == 0 {
+						statusText := "No other namespaces to copy to"
+						m.statusMsg = statusText
+						m.dockerRegistryViewer.SetStatusMsg(statusText)
+						return m, clearStatusAfter(3 * time.Second)
+					}
+					first := namespaces[0]
+					remaining := namespaces[1:]
+					statusText := fmt.Sprintf("Copying to %s...", first)
+					m.statusMsg = statusText
+					m.dockerRegistryViewer.SetStatusMsg(statusText)
+					return m, m.copyDockerRegistryToSingleNamespace(req.SourceNamespace, req.SecretName, first, remaining, 0, 0)
+				}
+				statusText := fmt.Sprintf("Copying to %s...", req.TargetNamespace)
+				m.statusMsg = statusText
+				m.dockerRegistryViewer.SetStatusMsg(statusText)
+				return m, m.copyDockerRegistryToSingleNamespace(req.SourceNamespace, req.SecretName, req.TargetNamespace, nil, 0, 0)
 			}
 			return m, cmd
 		}
@@ -1029,6 +1100,19 @@ func (m Model) View() string {
 		)
 	}
 
+	// Render Docker Registry viewer as overlay
+	if m.dockerRegistryViewer.IsVisible() {
+		return lipgloss.Place(
+			m.width,
+			m.height,
+			lipgloss.Left,
+			lipgloss.Top,
+			m.dockerRegistryViewer.View(),
+			lipgloss.WithWhitespaceChars(" "),
+			lipgloss.WithWhitespaceForeground(style.Background),
+		)
+	}
+
 	// Reserve 1 line for status bar
 	boxHeight := contentHeight - 1
 
@@ -1235,12 +1319,14 @@ func (m *Model) handleEnter() (tea.Model, tea.Cmd) {
 				secret := m.navigator.SelectedSecret()
 				if secret != nil {
 					m.loading = true
+					m.isDockerRegistrySecret = false
 					return m, m.loadSecretData(secret.Name)
 				}
 			case component.SectionDockerRegistry:
 				secret := m.navigator.SelectedDockerRegistrySecret()
 				if secret != nil {
 					m.loading = true
+					m.isDockerRegistrySecret = true
 					return m, m.loadSecretData(secret.Name)
 				}
 			}
@@ -1674,6 +1760,55 @@ func (m *Model) copyConfigMapToSingleNamespace(sourceNs, configMapName, targetNs
 		newRemaining := remaining[1:]
 		return component.ConfigMapCopyProgress{
 			ConfigMapName:    configMapName,
+			SourceNamespace:  sourceNs,
+			CurrentNamespace: next,
+			Remaining:        newRemaining,
+			SuccessCount:     successCount,
+			ErrorCount:       errorCount,
+		}
+	}
+}
+
+func (m *Model) copyDockerRegistryToSingleNamespace(sourceNs, secretName, targetNs string, remaining []string, successCount, errorCount int) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+
+		// Small delay so user can see the namespace name
+		time.Sleep(300 * time.Millisecond)
+
+		// Copy to current namespace (Docker Registry secrets are just secrets)
+		err := repository.CopySecretToNamespace(ctx, m.k8sClient.Clientset(), sourceNs, secretName, targetNs)
+		if err != nil {
+			errorCount++
+		} else {
+			successCount++
+		}
+
+		// If no more remaining, return final result
+		if len(remaining) == 0 {
+			if errorCount > 0 {
+				return component.DockerRegistryCopyResult{
+					Success: false,
+					Message: fmt.Sprintf("Copied to %d namespaces, %d failed", successCount, errorCount),
+				}
+			}
+			if successCount == 1 {
+				return component.DockerRegistryCopyResult{
+					Success: true,
+					Message: fmt.Sprintf("Copied to %s", targetNs),
+				}
+			}
+			return component.DockerRegistryCopyResult{
+				Success: true,
+				Message: fmt.Sprintf("Copied to %d namespaces", successCount),
+			}
+		}
+
+		// Send progress for next namespace
+		next := remaining[0]
+		newRemaining := remaining[1:]
+		return component.DockerRegistryCopyProgress{
+			SecretName:       secretName,
 			SourceNamespace:  sourceNs,
 			CurrentNamespace: next,
 			Remaining:        newRemaining,
