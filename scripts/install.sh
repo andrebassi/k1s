@@ -4,8 +4,8 @@
 # Installation script
 #
 # Usage:
-#   curl -sSL https://raw.githubusercontent.com/andrebassi/k1s/main/scripts/install.sh | bash
-#   curl -sSL https://raw.githubusercontent.com/andrebassi/k1s/main/scripts/install.sh | bash -s -- --version v0.1.2
+#   curl -sSL https://cdn.jsdelivr.net/gh/andrebassi/k1s@main/scripts/install.sh | bash
+#   curl -sSL https://cdn.jsdelivr.net/gh/andrebassi/k1s@main/scripts/install.sh | bash -s -- --version v0.1.2
 #
 # Options:
 #   --version VERSION    Install specific version (default: latest)
@@ -56,10 +56,10 @@ show_help() {
     echo ""
     echo "Examples:"
     echo "  # Install latest version"
-    echo "  curl -sSL https://raw.githubusercontent.com/andrebassi/k1s/main/scripts/install.sh | bash"
+    echo "  curl -sSL https://cdn.jsdelivr.net/gh/andrebassi/k1s@main/scripts/install.sh | bash"
     echo ""
     echo "  # Install specific version"
-    echo "  curl -sSL https://raw.githubusercontent.com/andrebassi/k1s/main/scripts/install.sh | bash -s -- --version v0.1.2"
+    echo "  curl -sSL https://cdn.jsdelivr.net/gh/andrebassi/k1s@main/scripts/install.sh | bash -s -- --version v0.1.2"
     echo ""
 }
 

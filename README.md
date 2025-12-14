@@ -79,7 +79,11 @@ k1s is a terminal-based user interface (TUI) for debugging Kubernetes workloads.
 ### Quick Install (Recommended)
 
 ```bash
+# Via GitHub (may have cache delay)
 curl -sSL https://raw.githubusercontent.com/andrebassi/k1s/main/scripts/install.sh | bash
+
+# Via jsDelivr CDN (faster updates)
+curl -sSL https://cdn.jsdelivr.net/gh/andrebassi/k1s@main/scripts/install.sh | bash
 ```
 
 ### Via Homebrew (macOS/Linux)
