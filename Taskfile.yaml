@@ -355,3 +355,96 @@ tasks:
         echo ""
         echo "Reference: https://wiki.archlinux.org/title/AUR_submission_guidelines"
         echo ""
+
+  # ============================================
+  # DEB/RPM Package Tasks
+  # ============================================
+
+  deb:build:
+    desc: Build .deb package locally (requires nfpm)
+    vars:
+      TAG:
+        sh: git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.1"
+      VERSION:
+        sh: git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.1.1"
+    cmds:
+      - |
+        if ! command -v nfpm &> /dev/null; then
+          echo "Installing nfpm..."
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+        fi
+        task build
+        mkdir -p dist
+        cp {{.BUILD_DIR}}/{{.BINARY_NAME}} dist/k1s-linux-amd64
+        VERSION={{.VERSION}} GOARCH=amd64 ARCH=linux-amd64 nfpm pkg --packager deb --target dist/
+        echo "Created: dist/k1s_{{.VERSION}}_amd64.deb"
+
+  rpm:build:
+    desc: Build .rpm package locally (requires nfpm)
+    vars:
+      TAG:
+        sh: git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.1"
+      VERSION:
+        sh: git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.1.1"
+    cmds:
+      - |
+        if ! command -v nfpm &> /dev/null; then
+          echo "Installing nfpm..."
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+        fi
+        task build
+        mkdir -p dist
+        cp {{.BUILD_DIR}}/{{.BINARY_NAME}} dist/k1s-linux-amd64
+        VERSION={{.VERSION}} GOARCH=amd64 ARCH=linux-amd64 nfpm pkg --packager rpm --target dist/
+        echo "Created: dist/k1s-{{.VERSION}}-1.amd64.rpm"
+
+  deb:info:
+    desc: Show installation instructions for .deb package
+    vars:
+      TAG:
+        sh: git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.1"
+      VERSION:
+        sh: git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.1.1"
+    cmds:
+      - |
+        echo ""
+        echo "=== Debian/Ubuntu Installation ==="
+        echo ""
+        echo "# Download and install (x86_64):"
+        echo "curl -LO https://github.com/andrebassi/k1s/releases/download/{{.TAG}}/k1s_{{.VERSION}}_amd64.deb"
+        echo "sudo apt install ./k1s_{{.VERSION}}_amd64.deb"
+        echo ""
+        echo "# Or for ARM64:"
+        echo "curl -LO https://github.com/andrebassi/k1s/releases/download/{{.TAG}}/k1s_{{.VERSION}}_arm64.deb"
+        echo "sudo apt install ./k1s_{{.VERSION}}_arm64.deb"
+        echo ""
+        echo "# Uninstall:"
+        echo "sudo apt remove k1s"
+        echo ""
+
+  rpm:info:
+    desc: Show installation instructions for .rpm package
+    vars:
+      TAG:
+        sh: git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.1"
+      VERSION:
+        sh: git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.1.1"
+    cmds:
+      - |
+        echo ""
+        echo "=== RHEL/Fedora/CentOS Installation ==="
+        echo ""
+        echo "# Download and install with dnf (x86_64):"
+        echo "curl -LO https://github.com/andrebassi/k1s/releases/download/{{.TAG}}/k1s-{{.VERSION}}-1.amd64.rpm"
+        echo "sudo dnf install ./k1s-{{.VERSION}}-1.amd64.rpm"
+        echo ""
+        echo "# Or with yum:"
+        echo "sudo yum localinstall ./k1s-{{.VERSION}}-1.amd64.rpm"
+        echo ""
+        echo "# For ARM64:"
+        echo "curl -LO https://github.com/andrebassi/k1s/releases/download/{{.TAG}}/k1s-{{.VERSION}}-1.arm64.rpm"
+        echo "sudo dnf install ./k1s-{{.VERSION}}-1.arm64.rpm"
+        echo ""
+        echo "# Uninstall:"
+        echo "sudo dnf remove k1s"
+        echo ""

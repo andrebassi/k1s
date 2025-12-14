@@ -1,0 +1,35 @@
+# nFPM configuration for building .deb and .rpm packages
+# https://nfpm.goreleaser.com/
+
+name: k1s
+arch: "${GOARCH}"
+platform: linux
+version: "${VERSION}"
+maintainer: Andre Bassi <andrebassi@github.com>
+description: |
+  Kubernetes TUI Debugger - One screen to see why your pod is broken.
+  k1s is a terminal-based user interface for debugging Kubernetes workloads.
+  It provides real-time logs, events, metrics, and resource inspection in a
+  single dashboard view.
+vendor: Andre Bassi
+homepage: https://github.com/andrebassi/k1s
+license: MIT
+
+contents:
+  - src: ./dist/k1s-linux-${ARCH}
+    dst: /usr/bin/k1s
+    file_info:
+      mode: 0755
+
+depends:
+  - kubectl
+
+recommends:
+  - metrics-server
+
+rpm:
+  group: Applications/System
+  compression: gzip
+
+deb:
+  compression: gzip

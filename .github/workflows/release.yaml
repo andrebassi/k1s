@@ -65,13 +65,75 @@ jobs:
           name: k1s-${{ matrix.name }}
           path: dist/k1s-${{ matrix.name }}${{ matrix.ext }}
 
+  package:
+    name: Create Linux packages
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            binary: linux-amd64
+          - arch: arm64
+            binary: linux-arm64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: k1s-${{ matrix.binary }}
+          path: dist
+
+      - name: Get version
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Install nFPM
+        run: |
+          curl -sfL https://github.com/goreleaser/nfpm/releases/latest/download/nfpm_linux_amd64.tar.gz | tar xz -C /tmp
+          sudo mv /tmp/nfpm /usr/local/bin/
+
+      - name: Build .deb package
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          GOARCH: ${{ matrix.arch }}
+          ARCH: ${{ matrix.binary }}
+        run: |
+          nfpm pkg --packager deb --target dist/k1s_${{ steps.version.outputs.VERSION }}_${{ matrix.arch }}.deb
+
+      - name: Build .rpm package
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          GOARCH: ${{ matrix.arch }}
+          ARCH: ${{ matrix.binary }}
+        run: |
+          nfpm pkg --packager rpm --target dist/k1s-${{ steps.version.outputs.VERSION }}-1.${{ matrix.arch }}.rpm
+
+      - name: Upload deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: k1s-deb-${{ matrix.arch }}
+          path: dist/*.deb
+
+      - name: Upload rpm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: k1s-rpm-${{ matrix.arch }}
+          path: dist/*.rpm
+
   release:
     name: Create Release
-    needs: build
+    needs: [build, package]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -85,7 +147,7 @@ jobs:
       - name: Create checksums
         run: |
           cd dist
-          sha256sum k1s-* > checksums.txt
+          sha256sum k1s-* k1s_*.deb 2>/dev/null | sort > checksums.txt
           cat checksums.txt
 
       - name: Create Release
@@ -102,6 +164,8 @@ jobs:
             dist/k1s-linux-arm64
             dist/k1s-linux-armv7
             dist/k1s-windows-amd64.exe
+            dist/*.deb
+            dist/*.rpm
             dist/checksums.txt
           body: |
             ## k1s ${{ github.ref_name }}
@@ -118,6 +182,10 @@ jobs:
             | Linux | ARM64 | `k1s-linux-arm64` |
             | Linux | ARMv7 (Raspberry Pi) | `k1s-linux-armv7` |
             | Windows | x86_64 (amd64) | `k1s-windows-amd64.exe` |
+            | Debian/Ubuntu | x86_64 | `k1s_${{ steps.version.outputs.VERSION }}_amd64.deb` |
+            | Debian/Ubuntu | ARM64 | `k1s_${{ steps.version.outputs.VERSION }}_arm64.deb` |
+            | RHEL/Fedora | x86_64 | `k1s-${{ steps.version.outputs.VERSION }}-1.amd64.rpm` |
+            | RHEL/Fedora | ARM64 | `k1s-${{ steps.version.outputs.VERSION }}-1.arm64.rpm` |
 
             ### Installation
 
@@ -136,6 +204,18 @@ jobs:
             **Arch Linux (AUR):**
             ```bash
             yay -S k1s-bin
+            ```
+
+            **Debian/Ubuntu (.deb):**
+            ```bash
+            curl -LO https://github.com/andrebassi/k1s/releases/download/${{ github.ref_name }}/k1s_${{ steps.version.outputs.VERSION }}_amd64.deb
+            sudo apt install ./k1s_${{ steps.version.outputs.VERSION }}_amd64.deb
+            ```
+
+            **RHEL/Fedora/CentOS (.rpm):**
+            ```bash
+            curl -LO https://github.com/andrebassi/k1s/releases/download/${{ github.ref_name }}/k1s-${{ steps.version.outputs.VERSION }}-1.amd64.rpm
+            sudo dnf install ./k1s-${{ steps.version.outputs.VERSION }}-1.amd64.rpm
             ```
 
             **Manual (Linux/macOS):**

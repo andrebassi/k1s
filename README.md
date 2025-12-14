@@ -102,6 +102,35 @@ paru -S k1s-bin
 
 > **Note:** AUR submission pending. See [aur/k1s-bin](aur/k1s-bin/PKGBUILD) for the PKGBUILD.
 
+### Via apt-get (Debian/Ubuntu)
+
+```bash
+# Download the .deb package (x86_64)
+curl -LO https://github.com/andrebassi/k1s/releases/latest/download/k1s_VERSION_amd64.deb
+
+# Or for ARM64
+curl -LO https://github.com/andrebassi/k1s/releases/latest/download/k1s_VERSION_arm64.deb
+
+# Install
+sudo apt install ./k1s_*.deb
+```
+
+### Via yum/dnf (RHEL/Fedora/CentOS)
+
+```bash
+# Download the .rpm package (x86_64)
+curl -LO https://github.com/andrebassi/k1s/releases/latest/download/k1s-VERSION-1.amd64.rpm
+
+# Or for ARM64
+curl -LO https://github.com/andrebassi/k1s/releases/latest/download/k1s-VERSION-1.arm64.rpm
+
+# Install with yum
+sudo yum localinstall ./k1s-*.rpm
+
+# Or with dnf
+sudo dnf install ./k1s-*.rpm
+```
+
 ### Via MacPorts (macOS)
 
 ```bash
