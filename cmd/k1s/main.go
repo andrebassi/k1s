@@ -18,13 +18,46 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"k8s.io/client-go/tools/clientcmd"
+
 	"github.com/andrebassi/k1s/internal/adapters/tui"
 )
 
 // version defines the current version of k1s.
 const version = "0.1.0"
+
+// preflightChecks verifies that kubectl is installed and kubeconfig is valid.
+// Returns an error if any check fails.
+func preflightChecks() error {
+	// Check if kubectl is installed
+	if _, err := exec.LookPath("kubectl"); err != nil {
+		return fmt.Errorf("kubectl not found in PATH. Please install kubectl: https://kubernetes.io/docs/tasks/tools/")
+	}
+
+	// Check if kubeconfig exists and has a valid context
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	configOverrides := &clientcmd.ConfigOverrides{}
+	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
+
+	rawConfig, err := kubeConfig.RawConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load kubeconfig: %v", err)
+	}
+
+	if rawConfig.CurrentContext == "" {
+		return fmt.Errorf("no current context set in kubeconfig. Run: kubectl config use-context <context-name>")
+	}
+
+	// Verify the current context exists
+	if _, exists := rawConfig.Contexts[rawConfig.CurrentContext]; !exists {
+		return fmt.Errorf("current context '%s' not found in kubeconfig", rawConfig.CurrentContext)
+	}
+
+	return nil
+}
 
 // main initializes and runs the k1s TUI application.
 // It parses command-line arguments for namespace selection and help/version flags,
@@ -61,6 +94,12 @@ func main() {
 				os.Exit(1)
 			}
 		}
+	}
+
+	// Run preflight checks before starting the TUI
+	if err := preflightChecks(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 
 	model, err := tui.NewWithOptions(tui.Options{
