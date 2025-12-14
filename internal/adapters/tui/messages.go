@@ -13,10 +13,10 @@ import (
 // Contains namespace list, node list, and optionally workload list.
 // Used during application startup and namespace/resource refresh.
 type loadedMsg struct {
-	workloads  []repository.WorkloadInfo // Workloads for current view (Deployments, StatefulSets, etc.)
-	namespaces []string                  // Available namespaces in the cluster
-	nodes      []repository.NodeInfo     // Cluster nodes with status and resource info
-	err        error                     // Error if data loading failed
+	workloads  []repository.WorkloadInfo    // Workloads for current view (Deployments, StatefulSets, etc.)
+	namespaces []repository.NamespaceInfo   // Available namespaces with status in the cluster
+	nodes      []repository.NodeInfo        // Cluster nodes with status and resource info
+	err        error                        // Error if data loading failed
 }
 
 // resourcesLoadedMsg is sent when namespace resources are loaded.
@@ -102,10 +102,17 @@ type nodePodLoadedMsg struct {
 // Used when application starts with -n flag to go directly to resources view.
 // Contains both cluster-level data (namespaces, nodes) and namespace resources.
 type initialResourcesLoadedMsg struct {
-	namespaces []string                   // Available namespaces in the cluster
+	namespaces []repository.NamespaceInfo // Available namespaces with status in the cluster
 	nodes      []repository.NodeInfo      // Cluster nodes with status info
 	pods       []repository.PodInfo       // Pods in the specified namespace
 	configmaps []repository.ConfigMapInfo // ConfigMaps in the namespace
 	secrets    []repository.SecretInfo    // Secrets in the namespace
 	err        error                      // Error if loading failed
+}
+
+// namespaceDeletedMsg is sent when a namespace force delete operation completes.
+// Used for removing stuck Terminating namespaces.
+type namespaceDeletedMsg struct {
+	namespace string // Name of the deleted namespace
+	err       error  // Error if deletion failed (nil on success)
 }

@@ -118,8 +118,8 @@ func (c *Client) SetNamespace(ns string) {
 	c.namespace = ns
 }
 
-// ListNamespaces returns all namespace names in the cluster, sorted alphabetically.
-func (c *Client) ListNamespaces(ctx context.Context) ([]string, error) {
+// ListNamespaces returns all namespaces in the cluster with their status, sorted alphabetically.
+func (c *Client) ListNamespaces(ctx context.Context) ([]NamespaceInfo, error) {
 	return ListNamespaces(ctx, c.clientset)
 }
 

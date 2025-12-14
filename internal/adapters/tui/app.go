@@ -215,7 +215,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.configMapViewer.SetSize(m.width, m.height)
-		m.configMapViewer.SetNamespaces(m.navigator.GetNamespaces())
+		m.configMapViewer.SetNamespaces(m.navigator.GetActiveNamespaceNames())
 		m.configMapViewer.Show(msg.data, m.k8sClient.Namespace())
 		return m, nil
 
@@ -232,11 +232,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Show appropriate viewer based on secret type
 		if m.isDockerRegistrySecret {
 			m.dockerRegistryViewer.SetSize(m.width, m.height)
-			m.dockerRegistryViewer.SetNamespaces(m.navigator.GetNamespaces())
+			m.dockerRegistryViewer.SetNamespaces(m.navigator.GetActiveNamespaceNames())
 			m.dockerRegistryViewer.Show(msg.data, m.k8sClient.Namespace())
 		} else {
 			m.secretViewer.SetSize(m.width, m.height)
-			m.secretViewer.SetNamespaces(m.navigator.GetNamespaces())
+			m.secretViewer.SetNamespaces(m.navigator.GetActiveNamespaceNames())
 			m.secretViewer.Show(msg.data, m.k8sClient.Namespace())
 		}
 		return m, nil
@@ -411,6 +411,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case namespaceDeletedMsg:
+		if msg.err != nil {
+			m.statusMsg = "Failed to delete namespace: " + msg.err.Error()
+		} else {
+			m.statusMsg = fmt.Sprintf("Namespace %s deleted", msg.namespace)
+			// Refresh namespace list
+			return m, tea.Batch(m.loadInitialData(), clearStatusAfter(3*time.Second))
+		}
+		return m, clearStatusAfter(5 * time.Second)
+
 	case component.WorkloadActionMenuResult:
 		workload := m.navigator.SelectedWorkload()
 		if workload == nil {
@@ -437,6 +447,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loading = true
 				m.statusMsg = "Restarting..."
 				return m, m.restartWorkload(workload)
+			}
+		}
+		// Handle namespace force delete
+		if msg.Confirmed && msg.Action == "delete_namespace" {
+			if nsInfo, ok := msg.Data.(*repository.NamespaceInfo); ok {
+				m.statusMsg = fmt.Sprintf("Deleting namespace %s...", nsInfo.Name)
+				return m, m.forceDeleteNamespace(nsInfo.Name)
 			}
 		}
 		// Forward other confirm results (exec, port-forward, delete) to dashboard
@@ -780,6 +797,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.view == ViewNavigator && m.navigator.Mode() == component.ModeNamespace && len(m.nodes) > 0 {
 				m.nodesPanelActive = true
 				return m, nil
+			}
+
+		case msg.String() == "d":
+			// In namespace mode, delete Terminating namespaces
+			if m.view == ViewNavigator && m.navigator.Mode() == component.ModeNamespace && !m.nodesPanelActive {
+				nsInfo := m.navigator.SelectedNamespaceInfo()
+				if nsInfo != nil && nsInfo.Status != "Active" {
+					// Show confirmation dialog for namespace deletion
+					m.confirmDialog.Show(
+						fmt.Sprintf("Force delete namespace '%s'?", nsInfo.Name),
+						"This will remove all resources and finalizers.",
+						"delete_namespace",
+						nsInfo,
+					)
+					return m, nil
+				}
 			}
 
 		case key.Matches(msg, m.keys.Up):

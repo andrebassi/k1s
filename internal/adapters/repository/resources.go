@@ -41,6 +41,13 @@ var AllResourceTypes = []ResourceType{
 	ResourcePods,
 }
 
+// NamespaceInfo provides information about a Kubernetes namespace.
+// Includes the namespace name and its current phase status.
+type NamespaceInfo struct {
+	Name   string // Namespace name
+	Status string // Phase status (Active, Terminating)
+}
+
 // WorkloadInfo provides a summary view of a Kubernetes workload.
 // This is used for listing workloads in the navigation view.
 type WorkloadInfo struct {
@@ -199,9 +206,30 @@ type SecretInfo struct {
 	Keys int    // Number of data keys
 }
 
-// ListNamespaces returns all namespace names in the cluster, sorted alphabetically.
-// Only returns namespaces in Active phase (excludes Terminating namespaces).
-func ListNamespaces(ctx context.Context, clientset *kubernetes.Clientset) ([]string, error) {
+// ListNamespaces returns all namespaces in the cluster with their status, sorted alphabetically.
+// Includes all namespaces regardless of phase (Active, Terminating, etc.).
+func ListNamespaces(ctx context.Context, clientset *kubernetes.Clientset) ([]NamespaceInfo, error) {
+	nsList, err := clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	var namespaces []NamespaceInfo
+	for _, ns := range nsList.Items {
+		namespaces = append(namespaces, NamespaceInfo{
+			Name:   ns.Name,
+			Status: string(ns.Status.Phase),
+		})
+	}
+	sort.Slice(namespaces, func(i, j int) bool {
+		return namespaces[i].Name < namespaces[j].Name
+	})
+	return namespaces, nil
+}
+
+// ListActiveNamespaceNames returns only Active namespace names (for copy operations).
+// This excludes Terminating namespaces to prevent copy failures.
+func ListActiveNamespaceNames(ctx context.Context, clientset *kubernetes.Clientset) ([]string, error) {
 	nsList, err := clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
@@ -209,11 +237,9 @@ func ListNamespaces(ctx context.Context, clientset *kubernetes.Clientset) ([]str
 
 	var namespaces []string
 	for _, ns := range nsList.Items {
-		// Skip namespaces that are not Active (e.g., Terminating)
-		if ns.Status.Phase != corev1.NamespaceActive {
-			continue
+		if ns.Status.Phase == corev1.NamespaceActive {
+			namespaces = append(namespaces, ns.Name)
 		}
-		namespaces = append(namespaces, ns.Name)
 	}
 	sort.Strings(namespaces)
 	return namespaces, nil
@@ -909,6 +935,88 @@ func CopyConfigMapToNamespace(ctx context.Context, clientset *kubernetes.Clients
 		} else {
 			return fmt.Errorf("failed to create configmap: %w", err)
 		}
+	}
+
+	return nil
+}
+
+// ForceDeleteNamespace forcefully deletes a stuck namespace by:
+// 1. Deleting all resources in the namespace
+// 2. Removing finalizers from the namespace
+// 3. Deleting the namespace itself
+// This is typically used for namespaces stuck in Terminating state.
+func ForceDeleteNamespace(ctx context.Context, clientset *kubernetes.Clientset, dynamicClient dynamic.Interface, namespace string) error {
+	// Step 1: Delete all resources in namespace
+	// Get all namespaced API resources
+	_, apiResources, err := clientset.Discovery().ServerGroupsAndResources()
+	if err != nil {
+		// Continue even with partial errors (some API groups may be unavailable)
+		if !strings.Contains(err.Error(), "unable to retrieve") {
+			return fmt.Errorf("failed to get API resources: %w", err)
+		}
+	}
+
+	// Delete resources from each API group
+	for _, resourceList := range apiResources {
+		gv, err := schema.ParseGroupVersion(resourceList.GroupVersion)
+		if err != nil {
+			continue
+		}
+
+		for _, resource := range resourceList.APIResources {
+			// Skip non-namespaced resources and subresources
+			if !resource.Namespaced || strings.Contains(resource.Name, "/") {
+				continue
+			}
+
+			// Skip resources that can't be deleted
+			hasDelete := false
+			for _, verb := range resource.Verbs {
+				if verb == "delete" {
+					hasDelete = true
+					break
+				}
+			}
+			if !hasDelete {
+				continue
+			}
+
+			// Delete all resources of this type in the namespace
+			gvr := schema.GroupVersionResource{
+				Group:    gv.Group,
+				Version:  gv.Version,
+				Resource: resource.Name,
+			}
+			_ = dynamicClient.Resource(gvr).Namespace(namespace).DeleteCollection(
+				ctx,
+				metav1.DeleteOptions{
+					GracePeriodSeconds: new(int64), // 0 seconds
+				},
+				metav1.ListOptions{},
+			)
+		}
+	}
+
+	// Step 2: Remove finalizers from namespace
+	ns, err := clientset.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get namespace: %w", err)
+	}
+
+	if len(ns.Spec.Finalizers) > 0 {
+		ns.Spec.Finalizers = []corev1.FinalizerName{}
+		_, err = clientset.CoreV1().Namespaces().Finalize(ctx, ns, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to remove finalizers: %w", err)
+		}
+	}
+
+	// Step 3: Delete namespace
+	err = clientset.CoreV1().Namespaces().Delete(ctx, namespace, metav1.DeleteOptions{
+		GracePeriodSeconds: new(int64), // 0 seconds
+	})
+	if err != nil && !strings.Contains(err.Error(), "not found") {
+		return fmt.Errorf("failed to delete namespace: %w", err)
 	}
 
 	return nil

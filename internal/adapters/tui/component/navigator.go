@@ -42,7 +42,7 @@ type Navigator struct {
 	pods         []repository.PodInfo
 	configmaps   []repository.ConfigMapInfo
 	secrets      []repository.SecretInfo
-	namespaces   []string
+	namespaces   []repository.NamespaceInfo
 	cursor       int
 	section      PodViewSection // Current section in pods view
 	sectionCursors [4]int       // Cursor for each section (Pods, ConfigMaps, Secrets, DockerRegistry)
@@ -728,7 +728,7 @@ func (n Navigator) renderNamespaces() string {
 	var b strings.Builder
 
 	// Table header
-	header := fmt.Sprintf("  %-4s %-40s %-10s", "#", "NAMESPACE", "STATUS")
+	header := fmt.Sprintf("  %-4s %-40s %-12s", "#", "NAMESPACE", "STATUS")
 	b.WriteString(style.TableHeaderStyle.Render(header))
 	b.WriteString("\n")
 
@@ -737,16 +737,27 @@ func (n Navigator) renderNamespaces() string {
 	for i := visible.start; i < visible.end; i++ {
 		ns := namespaces[i]
 		idx := fmt.Sprintf("%d", i+1)
-		status := style.StatusRunning.Render("Active")
+
+		// Style status based on phase
+		var status string
+		switch ns.Status {
+		case "Active":
+			status = style.StatusRunning.Render("Active")
+		case "Terminating":
+			status = style.StatusError.Render("Terminating")
+		default:
+			status = style.StatusMuted.Render(ns.Status)
+		}
 
 		cursor := "  "
+		nsName := style.Truncate(ns.Name, 40)
 		if i == n.cursor {
 			cursor = style.CursorStyle.Render("> ")
 			rowStyle := lipgloss.NewStyle().Background(style.Surface)
-			row := fmt.Sprintf("%s%-4s %-40s %-10s", cursor, idx, ns, status)
+			row := fmt.Sprintf("%s%-4s %-40s %s", cursor, idx, nsName, status)
 			b.WriteString(rowStyle.Render(row))
 		} else {
-			b.WriteString(fmt.Sprintf("%s%-4s %-40s %s", cursor, idx, ns, status))
+			b.WriteString(fmt.Sprintf("%s%-4s %-40s %s", cursor, idx, nsName, status))
 		}
 		b.WriteString("\n")
 	}
@@ -895,15 +906,15 @@ func (n Navigator) filteredPods() []repository.PodInfo {
 	return filtered
 }
 
-func (n Navigator) filteredNamespaces() []string {
+func (n Navigator) filteredNamespaces() []repository.NamespaceInfo {
 	if n.searchQuery == "" {
 		return n.namespaces
 	}
 
 	query := strings.ToLower(n.searchQuery)
-	var filtered []string
+	var filtered []repository.NamespaceInfo
 	for _, ns := range n.namespaces {
-		if strings.Contains(strings.ToLower(ns), query) {
+		if strings.Contains(strings.ToLower(ns.Name), query) {
 			filtered = append(filtered, ns)
 		}
 	}
@@ -960,7 +971,7 @@ func (n *Navigator) SetSecrets(secrets []repository.SecretInfo) {
 	}
 }
 
-func (n *Navigator) SetNamespaces(namespaces []string) {
+func (n *Navigator) SetNamespaces(namespaces []repository.NamespaceInfo) {
 	n.namespaces = namespaces
 }
 
@@ -1033,13 +1044,33 @@ func (n Navigator) Section() PodViewSection {
 func (n Navigator) SelectedNamespace() string {
 	namespaces := n.filteredNamespaces()
 	if n.cursor >= 0 && n.cursor < len(namespaces) {
-		return namespaces[n.cursor]
+		return namespaces[n.cursor].Name
 	}
 	return ""
 }
 
-func (n Navigator) GetNamespaces() []string {
+// SelectedNamespaceInfo returns the full namespace info including status.
+func (n Navigator) SelectedNamespaceInfo() *repository.NamespaceInfo {
+	namespaces := n.filteredNamespaces()
+	if n.cursor >= 0 && n.cursor < len(namespaces) {
+		return &namespaces[n.cursor]
+	}
+	return nil
+}
+
+func (n Navigator) GetNamespaces() []repository.NamespaceInfo {
 	return n.namespaces
+}
+
+// GetActiveNamespaceNames returns only active namespace names (for copy operations).
+func (n Navigator) GetActiveNamespaceNames() []string {
+	var names []string
+	for _, ns := range n.namespaces {
+		if ns.Status == "Active" {
+			names = append(names, ns.Name)
+		}
+	}
+	return names
 }
 
 func (n Navigator) SelectedResourceType() repository.ResourceType {

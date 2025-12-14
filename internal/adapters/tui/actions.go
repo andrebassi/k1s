@@ -259,6 +259,22 @@ func (m *Model) copyDockerRegistryToSingleNamespace(sourceNs, secretName, target
 	}
 }
 
+// forceDeleteNamespace forcefully deletes a stuck namespace.
+// This is an async operation that deletes all resources in the namespace,
+// removes finalizers, and then deletes the namespace itself.
+// Used for namespaces stuck in Terminating state.
+// Returns a namespaceDeletedMsg with the result (success or error).
+func (m *Model) forceDeleteNamespace(namespace string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		err := repository.ForceDeleteNamespace(ctx, m.k8sClient.Clientset(), m.k8sClient.DynamicClient(), namespace)
+		return namespaceDeletedMsg{
+			namespace: namespace,
+			err:       err,
+		}
+	}
+}
+
 // saveConfig persists the current application configuration to disk.
 // This includes user preferences like last namespace, resource type, and refresh interval.
 // Errors are silently ignored as config save is non-critical.
