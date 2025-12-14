@@ -3,6 +3,8 @@
 package tui
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/andrebassi/k1s/internal/adapters/tui/component"
 )
@@ -126,7 +128,19 @@ func (m *Model) handleEnter() (tea.Model, tea.Cmd) {
 					return m, m.loadPodsByNode(node.Name)
 				}
 			}
-			// Otherwise, select namespace
+			// Check if namespace is not Active (e.g., Terminating)
+			// If so, show delete confirmation instead of entering
+			nsInfo := m.navigator.SelectedNamespaceInfo()
+			if nsInfo != nil && nsInfo.Status != "Active" {
+				m.confirmDialog.Show(
+					fmt.Sprintf("Force delete namespace '%s'?", nsInfo.Name),
+					"This will remove all resources and finalizers.",
+					"delete_namespace",
+					nsInfo,
+				)
+				return m, nil
+			}
+			// Otherwise, select namespace and load resources
 			ns := m.navigator.SelectedNamespace()
 			if ns != "" {
 				m.k8sClient.SetNamespace(ns)
