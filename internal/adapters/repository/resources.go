@@ -1949,9 +1949,8 @@ func getIstioResources(ctx context.Context, dynamicClient dynamic.Interface, nam
 											vsRoute.Destination = host
 											// Check if this VS routes to one of our services
 											shortHost := strings.Split(host, ".")[0]
-											if serviceNames[shortHost] || serviceNames[host] {
-												// This VS is relevant to our pod
-											}
+											// Check relevance to our pod's services
+											_ = serviceNames[shortHost] || serviceNames[host]
 										}
 										if port, ok := dest["port"].(map[string]interface{}); ok {
 											if number, ok := port["number"].(int64); ok {

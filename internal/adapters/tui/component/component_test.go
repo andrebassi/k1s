@@ -87,7 +87,7 @@ func TestConfirmDialog_View_Visible(t *testing.T) {
 
 func TestConfirmDialog_Update_NotVisible(t *testing.T) {
 	cd := NewConfirmDialog()
-	cd, cmd := cd.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := cd.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd != nil {
 		t.Error("Update on hidden dialog should return nil cmd")
 	}
@@ -387,10 +387,8 @@ func TestBreadcrumb_View_SingleItem(t *testing.T) {
 	if view == "" {
 		t.Error("Single item breadcrumb should return non-empty view")
 	}
-	if strings.Contains(view, ">") {
-		// Single item should not have separator
-		// (actually it might contain styled > but shouldn't have multiple items)
-	}
+	// Single item may or may not contain styled separator
+	_ = strings.Contains(view, ">")
 }
 
 // ============================================
@@ -612,7 +610,7 @@ func TestEventsPanel_SelectedEvent(t *testing.T) {
 
 	event = ep.SelectedEvent()
 	if event == nil {
-		t.Error("SelectedEvent should return event when events exist")
+		t.Fatal("SelectedEvent should return event when events exist")
 	}
 	if event.Reason != "Test" {
 		t.Errorf("SelectedEvent.Reason = %q, want %q", event.Reason, "Test")
@@ -745,7 +743,7 @@ func TestActionMenu_View_Visible(t *testing.T) {
 
 func TestActionMenu_Update_NotVisible(t *testing.T) {
 	am := NewActionMenu()
-	am, cmd := am.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := am.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd != nil {
 		t.Error("Update on hidden menu should return nil cmd")
 	}
@@ -1157,7 +1155,7 @@ func TestPodActionMenu_View_Hidden(t *testing.T) {
 
 func TestPodActionMenu_Update_NotVisible(t *testing.T) {
 	pam := NewPodActionMenu()
-	pam, cmd := pam.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := pam.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd != nil {
 		t.Error("Update on hidden menu should return nil cmd")
 	}
@@ -1246,7 +1244,7 @@ func TestWorkloadActionMenu_View_Hidden(t *testing.T) {
 
 func TestWorkloadActionMenu_Update_NotVisible(t *testing.T) {
 	wam := NewWorkloadActionMenu()
-	wam, cmd := wam.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := wam.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd != nil {
 		t.Error("Update on hidden menu should return nil cmd")
 	}
@@ -1341,7 +1339,7 @@ func TestHPAViewer_View_Hidden(t *testing.T) {
 
 func TestHPAViewer_Update_NotVisible(t *testing.T) {
 	hv := NewHPAViewer()
-	hv, cmd := hv.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := hv.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd != nil {
 		t.Error("Update on hidden viewer should return nil cmd")
 	}
@@ -1479,7 +1477,7 @@ func TestConfigMapViewer_View_Hidden(t *testing.T) {
 
 func TestConfigMapViewer_Update_NotVisible(t *testing.T) {
 	cv := NewConfigMapViewer()
-	cv, cmd := cv.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := cv.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd != nil {
 		t.Error("Update on hidden viewer should return nil cmd")
 	}
@@ -1638,7 +1636,7 @@ func TestSecretViewer_View_Hidden(t *testing.T) {
 
 func TestSecretViewer_Update_NotVisible(t *testing.T) {
 	sv := NewSecretViewer()
-	sv, cmd := sv.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := sv.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd != nil {
 		t.Error("Update on hidden viewer should return nil cmd")
 	}
@@ -2008,7 +2006,7 @@ func TestDockerRegistryViewer_View_Hidden(t *testing.T) {
 
 func TestDockerRegistryViewer_Update_NotVisible(t *testing.T) {
 	drv := NewDockerRegistryViewer()
-	drv, cmd := drv.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := drv.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd != nil {
 		t.Error("Update on hidden viewer should return nil cmd")
 	}

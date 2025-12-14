@@ -278,7 +278,7 @@ func TestNewPodUseCase(t *testing.T) {
 	mock := &mockRepository{}
 	uc := NewPodUseCase(mock)
 	if uc == nil {
-		t.Error("NewPodUseCase should return non-nil")
+		t.Fatal("NewPodUseCase should return non-nil")
 	}
 	if uc.repo != mock {
 		t.Error("NewPodUseCase should store the repository")
@@ -289,7 +289,7 @@ func TestNewWorkloadUseCase(t *testing.T) {
 	mock := &mockRepository{}
 	uc := NewWorkloadUseCase(mock)
 	if uc == nil {
-		t.Error("NewWorkloadUseCase should return non-nil")
+		t.Fatal("NewWorkloadUseCase should return non-nil")
 	}
 	if uc.repo != mock {
 		t.Error("NewWorkloadUseCase should store the repository")
@@ -300,7 +300,7 @@ func TestNewNamespaceUseCase(t *testing.T) {
 	mock := &mockRepository{}
 	uc := NewNamespaceUseCase(mock)
 	if uc == nil {
-		t.Error("NewNamespaceUseCase should return non-nil")
+		t.Fatal("NewNamespaceUseCase should return non-nil")
 	}
 	if uc.repo != mock {
 		t.Error("NewNamespaceUseCase should store the repository")

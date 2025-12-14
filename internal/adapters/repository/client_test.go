@@ -197,7 +197,7 @@ contexts:
 users:
 - name: env-user
 `
-	os.WriteFile(kubeconfigPath, []byte(kubeconfigContent), 0600)
+	_ = os.WriteFile(kubeconfigPath, []byte(kubeconfigContent), 0600)
 	os.Setenv("KUBECONFIG", kubeconfigPath)
 
 	// NewClient uses ~/.kube/config directly, not KUBECONFIG env var

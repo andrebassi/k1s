@@ -18,12 +18,6 @@ const (
 	ManifestViewResources
 )
 
-var manifestViewModeLabels = map[ManifestViewMode]string{
-	ManifestViewSummary:   "Summary",
-	ManifestViewDetails:   "Details",
-	ManifestViewResources: "Resources",
-}
-
 type ManifestPanel struct {
 	pod      *repository.PodInfo
 	related  *repository.RelatedResources

@@ -633,10 +633,6 @@ func (n Navigator) renderConfigMapsTable(maxRows int, active bool) string {
 	return b.String()
 }
 
-func (n Navigator) renderSecretsTable(maxRows int, active bool) string {
-	return n.renderFilteredSecretsTable(maxRows, active, n.secrets)
-}
-
 func (n Navigator) renderFilteredSecretsTable(maxRows int, active bool, secrets []repository.SecretInfo) string {
 	if len(secrets) == 0 {
 		return style.StatusMuted.Render("  No secrets found")

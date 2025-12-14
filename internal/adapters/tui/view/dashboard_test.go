@@ -329,15 +329,12 @@ func TestDashboard_Update_FullscreenKey(t *testing.T) {
 	pod := &repository.PodInfo{Name: "test-pod", Namespace: "default", Status: "Running"}
 	d.SetPod(pod)
 
-	// Press f to toggle fullscreen - stores previous state
-	initialFullscreen := d.IsFullscreen()
+	// Press f to toggle fullscreen
 	d, _ = d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 
-	// fullscreen state should change
-	if d.IsFullscreen() == initialFullscreen {
-		// If it didn't toggle, that's still valid behavior depending on panel state
-		// Just verify no panic occurred
-	}
+	// fullscreen state may or may not change depending on panel state
+	// Just verify no panic occurred by accessing the method
+	_ = d.IsFullscreen()
 }
 
 func TestDashboard_Update_ExecFinishedMsg(t *testing.T) {
@@ -645,7 +642,7 @@ func TestDashboard_Update_WindowSizeMsg(t *testing.T) {
 	d := NewDashboard()
 
 	// Handle window size message - width and height may be handled by app.go not dashboard
-	d, _ = d.Update(tea.WindowSizeMsg{Width: 150, Height: 60})
+	_, _ = d.Update(tea.WindowSizeMsg{Width: 150, Height: 60})
 
 	// WindowSizeMsg is typically handled at app level, not dashboard level
 	// Just verify no panic occurred

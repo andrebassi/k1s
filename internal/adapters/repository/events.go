@@ -102,7 +102,7 @@ func eventsToEventInfo(events []corev1.Event) []EventInfo {
 		lastSeen := e.LastTimestamp.Time
 
 		// Fall back to EventTime for newer event format
-		if firstSeen.IsZero() && e.EventTime.Time.IsZero() == false {
+		if firstSeen.IsZero() && !e.EventTime.Time.IsZero() {
 			firstSeen = e.EventTime.Time
 		}
 		if lastSeen.IsZero() {

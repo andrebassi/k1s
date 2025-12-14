@@ -42,10 +42,7 @@ func TestGetStatusStyle(t *testing.T) {
 			result := GetStatusStyle(tt.status)
 			// Just verify the function doesn't panic and returns a style
 			// The style itself is a lipgloss.Style which is hard to compare directly
-			if result.Value() == "" {
-				// Style should be set, but lipgloss styles don't have a simple comparison
-				// Just ensure we get a result without panic
-			}
+			_ = result // Use result to ensure we get a valid style
 		})
 	}
 }

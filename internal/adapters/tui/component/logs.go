@@ -2,7 +2,6 @@ package component
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -482,10 +481,4 @@ func (l LogsPanel) getPlainTextLogs() string {
 	}
 
 	return content.String()
-}
-
-// stripLogsAnsi removes ANSI escape sequences from text
-func stripLogsAnsi(text string) string {
-	ansiRegex := regexp.MustCompile(`\x1b\[[0-9;]*m`)
-	return ansiRegex.ReplaceAllString(text, "")
 }

@@ -1268,6 +1268,3 @@ func formatInt32(v int32) string {
 	return fmt.Sprintf("%d", v)
 }
 
-func formatInt64(v int64) string {
-	return fmt.Sprintf("%d", v)
-}

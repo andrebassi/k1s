@@ -338,45 +338,6 @@ func (m *MetricsPanel) updateContent() {
 	}
 }
 
-// stripAnsi removes ANSI escape codes for accurate length calculation
-func stripAnsi(s string) string {
-	result := s
-	for {
-		start := strings.Index(result, "\x1b[")
-		if start == -1 {
-			break
-		}
-		end := strings.Index(result[start:], "m")
-		if end == -1 {
-			break
-		}
-		result = result[:start] + result[start+end+1:]
-	}
-	return result
-}
-
-func (m MetricsPanel) checkResourceIssues() []string {
-	if m.pod == nil {
-		return nil
-	}
-
-	var issues []string
-
-	for _, c := range m.pod.Containers {
-		if c.Resources.MemoryLimit == "" || c.Resources.MemoryLimit == "0" {
-			issues = append(issues, fmt.Sprintf("Container '%s' has no memory limit", c.Name))
-		}
-		if c.Resources.CPULimit == "" || c.Resources.CPULimit == "0" {
-			issues = append(issues, fmt.Sprintf("Container '%s' has no CPU limit", c.Name))
-		}
-		if c.Resources.MemoryRequest == "" || c.Resources.MemoryRequest == "0" {
-			issues = append(issues, fmt.Sprintf("Container '%s' has no memory request", c.Name))
-		}
-	}
-
-	return issues
-}
-
 func formatResourceValue(v string) string {
 	if v == "" || v == "0" {
 		return style.StatusMuted.Render("not set")
