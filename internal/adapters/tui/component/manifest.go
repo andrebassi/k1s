@@ -63,7 +63,7 @@ func (m ManifestPanel) View() string {
 	// Add scale hint at bottom right if workload exists
 	if m.related != nil && m.related.Owner != nil && m.related.Owner.WorkloadKind != "" {
 		hint := style.StatusMuted.Render("Press s to scale up · d to scale down")
-		hintLen := 42
+		hintLen := 38
 		padding := m.width - hintLen
 		if padding > 0 {
 			// Add extra lines to push hint to bottom
@@ -188,8 +188,19 @@ func (m ManifestPanel) renderPodInfo() string {
 	b.WriteString(fmt.Sprintf("  %-12s %d\n", "Restarts:", m.pod.Restarts))
 	b.WriteString(fmt.Sprintf("  %-12s %s\n", "Age:", m.pod.Age))
 
-	b.WriteString(fmt.Sprintf("  %-12s %s\n", "Node:", style.Truncate(m.pod.Node, m.width-16)))
-	b.WriteString(fmt.Sprintf("  %-12s %s\n", "IP:", m.pod.IP))
+	nodeValue := m.pod.Node
+	if nodeValue == "" {
+		nodeValue = style.StatusMuted.Render("<pending>")
+	} else {
+		nodeValue = style.Truncate(nodeValue, m.width-16)
+	}
+	b.WriteString(fmt.Sprintf("  %-12s %s\n", "Node:", nodeValue))
+
+	ipValue := m.pod.IP
+	if ipValue == "" {
+		ipValue = style.StatusMuted.Render("<pending>")
+	}
+	b.WriteString(fmt.Sprintf("  %-12s %s\n", "IP:", ipValue))
 
 	// Show image(s) from containers
 	if len(m.pod.Containers) > 0 {

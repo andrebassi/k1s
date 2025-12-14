@@ -489,6 +489,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Refresh resources list in real-time when viewing resources
 		if m.view == ViewNavigator && m.navigator.Mode() == component.ModeResources {
+			// If viewing pods by node, refresh with node filter
+			if m.selectedNode != "" {
+				return m, tea.Batch(
+					m.loadPodsByNode(m.selectedNode),
+					m.tickCmd(),
+				)
+			}
 			return m, tea.Batch(
 				m.loadAllResources(),
 				m.tickCmd(),
@@ -1050,6 +1057,7 @@ func (m *Model) handleBack() (tea.Model, tea.Cmd) {
 			// Go back to namespace selection
 			m.navigator.SetMode(component.ModeNamespace)
 			m.workload = nil
+			m.selectedNode = "" // Clear node filter
 			return m, nil
 		case component.ModeNamespace:
 			// Stay in namespace selection (no back action)

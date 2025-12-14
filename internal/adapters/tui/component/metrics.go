@@ -108,12 +108,21 @@ func (m MetricsPanel) View() string {
 
 	var header strings.Builder
 	header.WriteString(style.PanelTitleStyle.Render("Resource Usage"))
-	if !m.available {
-		header.WriteString(style.SubtitleStyle.Render(" (metrics-server not available)"))
-	}
 	header.WriteString("\n")
 
-	return header.String() + m.viewport.View()
+	content := header.String() + m.viewport.View()
+
+	// Add metrics-server hint at bottom right if not available
+	if !m.available {
+		hint := style.StatusMuted.Render("Metrics Server not available")
+		hintLen := 28
+		padding := m.width - hintLen
+		if padding > 0 {
+			content += "\n\n" + strings.Repeat(" ", padding) + hint
+		}
+	}
+
+	return content
 }
 
 func (m *MetricsPanel) SetMetrics(metrics *repository.PodMetrics) {
