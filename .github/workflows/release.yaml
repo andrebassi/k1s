@@ -92,14 +92,15 @@ jobs:
 
       - name: Install nFPM
         run: |
-          curl -sfL https://github.com/goreleaser/nfpm/releases/latest/download/nfpm_linux_amd64.tar.gz | tar xz -C /tmp
+          NFPM_VERSION=$(curl -s https://api.github.com/repos/goreleaser/nfpm/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+          curl -sfL "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" | tar xz -C /tmp
           sudo mv /tmp/nfpm /usr/local/bin/
 
       - name: Build .deb package
         env:
           VERSION: ${{ steps.version.outputs.VERSION }}
           GOARCH: ${{ matrix.arch }}
-          ARCH: ${{ matrix.binary }}
+          BINARY: ${{ matrix.binary }}
         run: |
           nfpm pkg --packager deb --target dist/k1s_${{ steps.version.outputs.VERSION }}_${{ matrix.arch }}.deb
 
@@ -107,7 +108,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.VERSION }}
           GOARCH: ${{ matrix.arch }}
-          ARCH: ${{ matrix.binary }}
+          BINARY: ${{ matrix.binary }}
         run: |
           nfpm pkg --packager rpm --target dist/k1s-${{ steps.version.outputs.VERSION }}-1.${{ matrix.arch }}.rpm
 

@@ -16,7 +16,7 @@ homepage: https://github.com/andrebassi/k1s
 license: MIT
 
 contents:
-  - src: ./dist/k1s-linux-${ARCH}
+  - src: ./dist/k1s-${BINARY}
     dst: /usr/bin/k1s
     file_info:
       mode: 0755
