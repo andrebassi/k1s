@@ -9,25 +9,212 @@ permissions:
   contents: write
 
 jobs:
-  goreleaser:
+  build:
+    name: Build binaries
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: darwin
+            goarch: amd64
+            name: darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            name: darwin-arm64
+          - goos: linux
+            goarch: amd64
+            name: linux-amd64
+          - goos: linux
+            goarch: arm64
+            name: linux-arm64
+          - goos: windows
+            goarch: amd64
+            name: windows-amd64
+            ext: .exe
+
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: '~> v2'
-          args: release --clean
+      - name: Get version
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Build binary
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w -X main.version=${{ steps.version.outputs.VERSION }} -X main.commit=${GITHUB_SHA::7} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o dist/k1s-${{ matrix.name }}${{ matrix.ext }} ./cmd/k1s
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: k1s-${{ matrix.name }}
+          path: dist/k1s-${{ matrix.name }}${{ matrix.ext }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la dist/
+
+      - name: Create checksums
+        run: |
+          cd dist
+          sha256sum k1s-* > checksums.txt
+          cat checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            dist/k1s-darwin-amd64
+            dist/k1s-darwin-arm64
+            dist/k1s-linux-amd64
+            dist/k1s-linux-arm64
+            dist/k1s-windows-amd64.exe
+            dist/checksums.txt
+          body: |
+            ## k1s ${{ github.ref_name }}
+
+            Kubernetes TUI Debugger - One screen to see why your pod is broken.
+
+            ### Downloads
+
+            | Platform | Architecture | Download |
+            |----------|--------------|----------|
+            | macOS | Intel (amd64) | `k1s-darwin-amd64` |
+            | macOS | Apple Silicon (arm64) | `k1s-darwin-arm64` |
+            | Linux | x86_64 (amd64) | `k1s-linux-amd64` |
+            | Linux | ARM64 | `k1s-linux-arm64` |
+            | Windows | x86_64 (amd64) | `k1s-windows-amd64.exe` |
+
+            ### Installation
+
+            **macOS (Homebrew):**
+            ```bash
+            brew tap andrebassi/k1s
+            brew install k1s
+            ```
+
+            **Manual (Linux/macOS):**
+            ```bash
+            # Download (Linux amd64)
+            curl -L -o k1s https://github.com/andrebassi/k1s/releases/download/${{ github.ref_name }}/k1s-linux-amd64
+            chmod +x k1s
+            sudo mv k1s /usr/local/bin/
+            ```
+
+            **macOS Apple Silicon:**
+            ```bash
+            curl -L -o k1s https://github.com/andrebassi/k1s/releases/download/${{ github.ref_name }}/k1s-darwin-arm64
+            chmod +x k1s
+            sudo mv k1s /usr/local/bin/
+            ```
+
+            ### Verify checksums
+
+            ```bash
+            sha256sum -c checksums.txt
+            ```
+
+  homebrew:
+    name: Update Homebrew Tap
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: andrebassi/homebrew-k1s
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-k1s
+
+      - name: Get version
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Download checksums
+        run: |
+          curl -L -o checksums.txt https://github.com/andrebassi/k1s/releases/download/${{ github.ref_name }}/checksums.txt
+          cat checksums.txt
+
+      - name: Get SHA256 sums
+        id: sha
+        run: |
+          echo "DARWIN_AMD64=$(grep darwin-amd64 checksums.txt | awk '{print $1}')" >> $GITHUB_OUTPUT
+          echo "DARWIN_ARM64=$(grep darwin-arm64 checksums.txt | awk '{print $1}')" >> $GITHUB_OUTPUT
+          echo "LINUX_AMD64=$(grep linux-amd64 checksums.txt | awk '{print $1}')" >> $GITHUB_OUTPUT
+          echo "LINUX_ARM64=$(grep linux-arm64 checksums.txt | awk '{print $1}')" >> $GITHUB_OUTPUT
+
+      - name: Update Homebrew formula
+        run: |
+          mkdir -p homebrew-k1s/Formula
+          cat > homebrew-k1s/Formula/k1s.rb << 'EOF'
+          class K1s < Formula
+            desc "Kubernetes TUI Debugger - One screen to see why your pod is broken"
+            homepage "https://github.com/andrebassi/k1s"
+            version "${{ steps.version.outputs.VERSION }}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/andrebassi/k1s/releases/download/${{ github.ref_name }}/k1s-darwin-arm64"
+                sha256 "${{ steps.sha.outputs.DARWIN_ARM64 }}"
+              else
+                url "https://github.com/andrebassi/k1s/releases/download/${{ github.ref_name }}/k1s-darwin-amd64"
+                sha256 "${{ steps.sha.outputs.DARWIN_AMD64 }}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/andrebassi/k1s/releases/download/${{ github.ref_name }}/k1s-linux-arm64"
+                sha256 "${{ steps.sha.outputs.LINUX_ARM64 }}"
+              else
+                url "https://github.com/andrebassi/k1s/releases/download/${{ github.ref_name }}/k1s-linux-amd64"
+                sha256 "${{ steps.sha.outputs.LINUX_AMD64 }}"
+              end
+            end
+
+            def install
+              bin.install Dir["k1s*"].first => "k1s"
+            end
+
+            test do
+              assert_match "k1s version", shell_output("#{bin}/k1s --version")
+            end
+          end
+          EOF
+
+      - name: Commit and push
+        run: |
+          cd homebrew-k1s
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/k1s.rb
+          git commit -m "Update k1s to ${{ github.ref_name }}" || echo "No changes to commit"
+          git push
