@@ -20,7 +20,7 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/andrebassi/k1s/internal/app"
+	"github.com/andrebassi/k1s/internal/adapters/tui"
 )
 
 // version defines the current version of k1s.
@@ -63,7 +63,7 @@ func main() {
 		}
 	}
 
-	model, err := app.NewWithOptions(app.Options{
+	model, err := tui.NewWithOptions(tui.Options{
 		Namespace: namespace,
 	})
 	if err != nil {
@@ -161,7 +161,7 @@ FEATURES:
     • Multi-container pod support
 
 CONFIGURATION:
-    Config file: ~/.config/k1s/config.json
+    Config file: ~/.config/k1s/configs.json
     Environment:
       KUBECONFIG        Path to kubeconfig (default: ~/.kube/config)
       K1S_NAMESPACE     Initial namespace (default: default)
