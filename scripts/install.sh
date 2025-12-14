@@ -260,11 +260,30 @@ try_package_manager() {
         fi
     fi
 
-    # Termux info
+    # Termux - check and install kubectl
     if [[ "$IS_TERMUX" == "true" ]]; then
         info "Installing k1s for Termux (Android)"
-        info "Make sure you have kubectl configured for your cluster"
+        if ! command -v kubectl &> /dev/null; then
+            warn "kubectl not found. Installing kubectl..."
+            install_kubectl_termux
+        else
+            info "kubectl found: $(kubectl version --client --short 2>/dev/null || kubectl version --client 2>/dev/null | head -1)"
+        fi
         echo ""
+    fi
+}
+
+# Install kubectl on Termux
+install_kubectl_termux() {
+    local kubectl_version
+    kubectl_version=$(curl -sL https://dl.k8s.io/release/stable.txt)
+
+    info "Downloading kubectl $kubectl_version for Android..."
+    if curl -sL "https://dl.k8s.io/release/${kubectl_version}/bin/linux/arm64/kubectl" -o "$PREFIX/bin/kubectl"; then
+        chmod +x "$PREFIX/bin/kubectl"
+        success "kubectl installed successfully!"
+    else
+        warn "Failed to install kubectl. Install manually: pkg install kubectl"
     fi
 }
 
