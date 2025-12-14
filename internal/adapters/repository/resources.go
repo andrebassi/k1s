@@ -200,6 +200,7 @@ type SecretInfo struct {
 }
 
 // ListNamespaces returns all namespace names in the cluster, sorted alphabetically.
+// Only returns namespaces in Active phase (excludes Terminating namespaces).
 func ListNamespaces(ctx context.Context, clientset *kubernetes.Clientset) ([]string, error) {
 	nsList, err := clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -208,6 +209,10 @@ func ListNamespaces(ctx context.Context, clientset *kubernetes.Clientset) ([]str
 
 	var namespaces []string
 	for _, ns := range nsList.Items {
+		// Skip namespaces that are not Active (e.g., Terminating)
+		if ns.Status.Phase != corev1.NamespaceActive {
+			continue
+		}
 		namespaces = append(namespaces, ns.Name)
 	}
 	sort.Strings(namespaces)
