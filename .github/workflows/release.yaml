@@ -27,6 +27,10 @@ jobs:
           - goos: linux
             goarch: arm64
             name: linux-arm64
+          - goos: linux
+            goarch: arm
+            goarm: "7"
+            name: linux-armv7
           - goos: windows
             goarch: amd64
             name: windows-amd64
@@ -49,6 +53,7 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
           CGO_ENABLED: 0
         run: |
           mkdir -p dist
@@ -95,6 +100,7 @@ jobs:
             dist/k1s-darwin-arm64
             dist/k1s-linux-amd64
             dist/k1s-linux-arm64
+            dist/k1s-linux-armv7
             dist/k1s-windows-amd64.exe
             dist/checksums.txt
           body: |
@@ -110,6 +116,7 @@ jobs:
             | macOS | Apple Silicon (arm64) | `k1s-darwin-arm64` |
             | Linux | x86_64 (amd64) | `k1s-linux-amd64` |
             | Linux | ARM64 | `k1s-linux-arm64` |
+            | Linux | ARMv7 (Raspberry Pi) | `k1s-linux-armv7` |
             | Windows | x86_64 (amd64) | `k1s-windows-amd64.exe` |
 
             ### Installation
