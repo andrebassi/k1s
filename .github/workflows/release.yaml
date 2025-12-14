@@ -73,6 +73,8 @@ jobs:
           # Install termux-elf-cleaner
           git clone https://github.com/termux/termux-elf-cleaner.git /tmp/termux-elf-cleaner
           cd /tmp/termux-elf-cleaner
+          mkdir build && cd build
+          cmake ..
           make
           # Fix TLS alignment for Android/Termux
           ./termux-elf-cleaner $GITHUB_WORKSPACE/dist/k1s-android-arm64
