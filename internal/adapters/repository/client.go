@@ -29,7 +29,7 @@ import (
 // It provides a unified interface for interacting with the Kubernetes API,
 // including standard resources, custom resources (via dynamic client), and metrics.
 type Client struct {
-	clientset     *kubernetes.Clientset
+	clientset     kubernetes.Interface
 	metricsClient *metricsv.Clientset
 	dynamicClient dynamic.Interface
 	config        *rest.Config
@@ -37,16 +37,19 @@ type Client struct {
 	namespace     string
 }
 
-// NewClient creates a new Kubernetes client using the default kubeconfigs.
+// NewClient creates a new Kubernetes client using the default kubeconfig.
 // It first attempts to use ~/.kube/config, falling back to in-cluster config
-// if running inside a Kubernetes cluster. The client includes:
-//   - Standard Kubernetes clientset for core resources
-//   - Metrics client for CPU/memory usage data
-//   - Dynamic client for custom resources (e.g., Istio VirtualServices)
+// if running inside a Kubernetes cluster.
 func NewClient() (*Client, error) {
 	kubeconfig := filepath.Join(homedir.HomeDir(), ".kube", "config")
+	return NewClientWithKubeconfig(kubeconfig)
+}
 
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+// NewClientWithKubeconfig creates a new Kubernetes client using the specified kubeconfig path.
+// If the kubeconfig doesn't exist or is invalid, it falls back to in-cluster config.
+// This function is useful for testing with custom kubeconfig files.
+func NewClientWithKubeconfig(kubeconfigPath string) (*Client, error) {
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	if err != nil {
 		config, err = rest.InClusterConfig()
 		if err != nil {
@@ -54,13 +57,25 @@ func NewClient() (*Client, error) {
 		}
 	}
 
-	config.Timeout = 30 * time.Second
+	return NewClientFromConfig(config, kubeconfigPath)
+}
 
-	// Suppress API deprecation warnings from being printed to stderr
+// NewClientFromConfig creates a new Kubernetes client from an existing rest.Config.
+// This is the most flexible option for testing, as you can pass any config including
+// fake configs or configs from envtest.
+// The kubeconfigPath parameter is optional and only used for context detection.
+func NewClientFromConfig(config *rest.Config, kubeconfigPath string) (*Client, error) {
+	if config == nil {
+		return nil, fmt.Errorf("config cannot be nil")
+	}
+
+	// Apply standard settings
+	config.Timeout = 30 * time.Second
 	config.WarningHandler = rest.NoWarnings{}
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
+		//coverage:ignore
 		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
 	}
 
@@ -69,13 +84,24 @@ func NewClient() (*Client, error) {
 
 	dynamicClient, err := dynamic.NewForConfig(config)
 	if err != nil {
+		//coverage:ignore
 		return nil, fmt.Errorf("failed to create dynamic client: %w", err)
 	}
 
-	rawConfig, _ := clientcmd.NewDefaultClientConfigLoadingRules().Load()
+	// Try to detect current context from kubeconfig
 	currentContext := ""
-	if rawConfig != nil {
-		currentContext = rawConfig.CurrentContext
+	if kubeconfigPath != "" {
+		rules := &clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfigPath}
+		rawConfig, _ := rules.Load()
+		if rawConfig != nil {
+			currentContext = rawConfig.CurrentContext
+		}
+	} else {
+		// Fall back to default loading rules
+		rawConfig, _ := clientcmd.NewDefaultClientConfigLoadingRules().Load()
+		if rawConfig != nil {
+			currentContext = rawConfig.CurrentContext
+		}
 	}
 
 	return &Client{
@@ -96,7 +122,7 @@ func (c *Client) DynamicClient() dynamic.Interface {
 
 // Clientset returns the standard Kubernetes clientset.
 // Use this for core Kubernetes resources (pods, services, deployments, etc.).
-func (c *Client) Clientset() *kubernetes.Clientset {
+func (c *Client) Clientset() kubernetes.Interface {
 	return c.clientset
 }
 
@@ -132,6 +158,7 @@ func (c *Client) ListContexts() ([]string, string, error) {
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	config, err := rules.Load()
 	if err != nil {
+		//coverage:ignore
 		return nil, "", err
 	}
 

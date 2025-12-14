@@ -2,7 +2,56 @@ package repository
 
 import (
 	"testing"
+	"time"
 )
+
+func TestFormatAge(t *testing.T) {
+	tests := []struct {
+		name     string
+		time     time.Time
+		expected string
+	}{
+		{
+			name:     "zero time",
+			time:     time.Time{},
+			expected: "Unknown",
+		},
+		{
+			name:     "seconds ago",
+			time:     time.Now().Add(-30 * time.Second),
+			expected: "30s",
+		},
+		{
+			name:     "minutes ago",
+			time:     time.Now().Add(-5 * time.Minute),
+			expected: "5m",
+		},
+		{
+			name:     "hours ago",
+			time:     time.Now().Add(-3 * time.Hour),
+			expected: "3h",
+		},
+		{
+			name:     "one day ago",
+			time:     time.Now().Add(-24 * time.Hour),
+			expected: "1d",
+		},
+		{
+			name:     "multiple days ago",
+			time:     time.Now().Add(-72 * time.Hour),
+			expected: "3d",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := formatAge(tt.time)
+			if result != tt.expected {
+				t.Errorf("formatAge() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
 
 func TestTruncateString(t *testing.T) {
 	tests := []struct {

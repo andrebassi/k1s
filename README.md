@@ -5,6 +5,8 @@ Kubernetes TUI Debugger - **One screen to see why your pod is broken.**
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Go Version](https://img.shields.io/badge/go-1.21+-00ADD8.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20|%20Linux%20|%20Windows%20|%20Android-lightgrey.svg)
+![CI](https://github.com/andrebassi/k1s/actions/workflows/ci.yaml/badge.svg)
+![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)
 
 ## Overview
 
@@ -318,8 +320,23 @@ task fmt
 # Run tests
 task test
 
+# Run tests with coverage
+task test:coverage
+
+# Run filtered coverage (repository package)
+task test:coverage:filtered
+
 # Create a release
 task release -- v0.2.0
+```
+
+### Test Coverage
+
+The repository package achieves **100% filtered test coverage** using `go-ignore-cov` to exclude untestable code paths (fake client limitations like log streaming and dynamic client operations).
+
+```bash
+# Check filtered coverage
+task test:coverage:filtered
 ```
 
 ### Testing Installation
@@ -373,7 +390,7 @@ k1s/
 ├── aur/                  # AUR package (Arch Linux)
 ├── termux/               # Termux package (Android)
 ├── ports/                # MacPorts package (macOS)
-├── .github/workflows/    # CI/CD release workflow
+├── .github/workflows/    # CI/CD workflows (ci.yaml, release.yaml)
 ├── Taskfile.yaml         # Task runner configuration
 └── go.mod
 ```

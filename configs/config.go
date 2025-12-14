@@ -49,14 +49,33 @@ func DefaultConfig() *Config {
 	}
 }
 
-// configPath returns the path to the configuration file.
+// userHomeDirFunc is a function variable for os.UserHomeDir.
+// It can be overridden in tests.
+var userHomeDirFunc = os.UserHomeDir
+
+// jsonMarshalFunc is a function variable for json.MarshalIndent.
+// It can be overridden in tests.
+var jsonMarshalFunc = func(v any, prefix, indent string) ([]byte, error) {
+	return json.MarshalIndent(v, prefix, indent)
+}
+
+// configPathFunc is a function variable that returns the config path.
+// It can be overridden in tests to use a temporary directory.
+var configPathFunc = defaultConfigPath
+
+// defaultConfigPath returns the default path to the configuration file.
 // The path follows XDG conventions: ~/.config/k1s/configs.json
-func configPath() (string, error) {
-	home, err := os.UserHomeDir()
+func defaultConfigPath() (string, error) {
+	home, err := userHomeDirFunc()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(home, ".config", "k1s", "configs.json"), nil
+}
+
+// configPath returns the path to the configuration file.
+func configPath() (string, error) {
+	return configPathFunc()
 }
 
 // Load reads the configuration from disk and returns it.
@@ -98,7 +117,7 @@ func (c *Config) Save() error {
 		return err
 	}
 
-	data, err := json.MarshalIndent(c, "", "  ")
+	data, err := jsonMarshalFunc(c, "", "  ")
 	if err != nil {
 		return err
 	}

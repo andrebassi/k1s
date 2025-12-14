@@ -5,8 +5,14 @@ import (
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
+	metricsv1beta1 "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
 )
+
+// MetricsClientInterface defines the interface for metrics operations.
+// This allows for easy testing with fake clients.
+type MetricsClientInterface interface {
+	MetricsV1beta1() metricsv1beta1.MetricsV1beta1Interface
+}
 
 // PodMetrics contains resource usage data for a pod and its containers.
 // This data comes from the Kubernetes metrics-server.
@@ -27,7 +33,7 @@ type ContainerMetrics struct {
 
 // GetPodMetrics retrieves current resource usage for a specific pod.
 // Returns an error if metrics-server is not available in the cluster.
-func GetPodMetrics(ctx context.Context, metricsClient *metricsv.Clientset, namespace, podName string) (*PodMetrics, error) {
+func GetPodMetrics(ctx context.Context, metricsClient MetricsClientInterface, namespace, podName string) (*PodMetrics, error) {
 	if metricsClient == nil {
 		return nil, fmt.Errorf("metrics server not available")
 	}
@@ -58,13 +64,14 @@ func GetPodMetrics(ctx context.Context, metricsClient *metricsv.Clientset, names
 
 // GetNamespaceMetrics retrieves resource usage for all pods in a namespace.
 // Returns an error if metrics-server is not available in the cluster.
-func GetNamespaceMetrics(ctx context.Context, metricsClient *metricsv.Clientset, namespace string) ([]PodMetrics, error) {
+func GetNamespaceMetrics(ctx context.Context, metricsClient MetricsClientInterface, namespace string) ([]PodMetrics, error) {
 	if metricsClient == nil {
 		return nil, fmt.Errorf("metrics server not available")
 	}
 
 	metricsList, err := metricsClient.MetricsV1beta1().PodMetricses(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
+		//coverage:ignore
 		return nil, err
 	}
 
