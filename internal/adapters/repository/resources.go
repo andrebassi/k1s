@@ -815,6 +815,53 @@ func GetSecret(ctx context.Context, clientset *kubernetes.Clientset, namespace, 
 	}, nil
 }
 
+// CopySecretToNamespace copies a secret from source namespace to target namespace.
+// If the secret already exists in target namespace, it will be updated.
+func CopySecretToNamespace(ctx context.Context, clientset *kubernetes.Clientset, sourceNamespace, secretName, targetNamespace string) error {
+	// Get source secret
+	sourceSecret, err := clientset.CoreV1().Secrets(sourceNamespace).Get(ctx, secretName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get source secret: %w", err)
+	}
+
+	// Create new secret for target namespace
+	newSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        sourceSecret.Name,
+			Namespace:   targetNamespace,
+			Labels:      sourceSecret.Labels,
+			Annotations: sourceSecret.Annotations,
+		},
+		Type: sourceSecret.Type,
+		Data: sourceSecret.Data,
+	}
+
+	// Remove resource version and UID (they are namespace-specific)
+	newSecret.ResourceVersion = ""
+	newSecret.UID = ""
+
+	// Try to create, if exists update
+	_, err = clientset.CoreV1().Secrets(targetNamespace).Create(ctx, newSecret, metav1.CreateOptions{})
+	if err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			// Update existing secret
+			existing, getErr := clientset.CoreV1().Secrets(targetNamespace).Get(ctx, secretName, metav1.GetOptions{})
+			if getErr != nil {
+				return fmt.Errorf("failed to get existing secret: %w", getErr)
+			}
+			newSecret.ResourceVersion = existing.ResourceVersion
+			_, err = clientset.CoreV1().Secrets(targetNamespace).Update(ctx, newSecret, metav1.UpdateOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to update secret: %w", err)
+			}
+		} else {
+			return fmt.Errorf("failed to create secret: %w", err)
+		}
+	}
+
+	return nil
+}
+
 func podToPodInfo(p *corev1.Pod) PodInfo {
 	var restarts int32
 	var containers []ContainerInfo

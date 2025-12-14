@@ -305,12 +305,63 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.secretViewer.SetSize(m.width, m.height)
+		m.secretViewer.SetNamespaces(m.navigator.GetNamespaces())
 		m.secretViewer.Show(msg.data, m.k8sClient.Namespace())
 		return m, nil
 
 	case component.SecretViewerClosed:
 		// Secret viewer was closed, nothing special to do
 		return m, nil
+
+	case component.SecretCopyRequest:
+		// Handle secret copy request
+		if msg.AllNamespaces {
+			// Filter out source namespace and start progress flow
+			var namespaces []string
+			for _, ns := range msg.Namespaces {
+				if ns != msg.SourceNamespace {
+					namespaces = append(namespaces, ns)
+				}
+			}
+			if len(namespaces) == 0 {
+				if len(msg.Namespaces) == 0 {
+					m.statusMsg = "Error: namespace list is empty"
+				} else {
+					m.statusMsg = "No other namespaces to copy to"
+				}
+				return m, clearStatusAfter(3 * time.Second)
+			}
+			// Start with first namespace
+			first := namespaces[0]
+			remaining := namespaces[1:]
+			m.statusMsg = fmt.Sprintf("Copying to %s...", first)
+			return m, m.copySecretToSingleNamespace(msg.SourceNamespace, msg.SecretName, first, remaining, 0, 0)
+		} else {
+			m.statusMsg = fmt.Sprintf("Copying to %s...", msg.TargetNamespace)
+			return m, m.copySecretToSingleNamespace(msg.SourceNamespace, msg.SecretName, msg.TargetNamespace, nil, 0, 0)
+		}
+
+	case component.SecretCopyProgress:
+		// Continue copying to next namespace
+		statusText := fmt.Sprintf("Copying to %s... (%d done)", msg.CurrentNamespace, msg.SuccessCount+msg.ErrorCount)
+		m.statusMsg = statusText
+		m.secretViewer.SetStatusMsg(statusText)
+		return m, m.copySecretToSingleNamespace(msg.SourceNamespace, msg.SecretName, msg.CurrentNamespace, msg.Remaining, msg.SuccessCount, msg.ErrorCount)
+
+	case component.SecretCopyResult:
+		// Show result
+		var statusText string
+		if msg.Success {
+			statusText = msg.Message
+		} else if msg.Err != nil {
+			statusText = "Error: " + msg.Err.Error()
+		} else {
+			statusText = msg.Message
+		}
+		m.statusMsg = statusText
+		m.secretViewer.SetStatusMsg(statusText)
+		// Clear status after showing result
+		return m, clearStatusAfter(3 * time.Second)
 
 	case nodePodLoadedMsg:
 		m.loading = false
@@ -456,6 +507,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case clearStatusMsg:
 		m.statusMsg = ""
+		m.secretViewer.SetStatusMsg("")
 		return m, nil
 
 	case view.ScaleRequestMsg:
@@ -534,6 +586,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Secret viewer takes priority
 		if m.secretViewer.IsVisible() {
 			m.secretViewer, cmd = m.secretViewer.Update(msg)
+			// Check for pending copy request
+			if req := m.secretViewer.GetPendingRequest(); req != nil {
+				// Handle the copy request directly
+				if req.AllNamespaces {
+					var namespaces []string
+					for _, ns := range req.Namespaces {
+						if ns != req.SourceNamespace {
+							namespaces = append(namespaces, ns)
+						}
+					}
+					if len(namespaces) == 0 {
+						statusText := "No other namespaces to copy to"
+						m.statusMsg = statusText
+						m.secretViewer.SetStatusMsg(statusText)
+						return m, clearStatusAfter(3 * time.Second)
+					}
+					first := namespaces[0]
+					remaining := namespaces[1:]
+					statusText := fmt.Sprintf("Copying to %s...", first)
+					m.statusMsg = statusText
+					m.secretViewer.SetStatusMsg(statusText)
+					return m, m.copySecretToSingleNamespace(req.SourceNamespace, req.SecretName, first, remaining, 0, 0)
+				}
+				statusText := fmt.Sprintf("Copying to %s...", req.TargetNamespace)
+				m.statusMsg = statusText
+				m.secretViewer.SetStatusMsg(statusText)
+				return m, m.copySecretToSingleNamespace(req.SourceNamespace, req.SecretName, req.TargetNamespace, nil, 0, 0)
+			}
 			return m, cmd
 		}
 
@@ -1449,6 +1529,55 @@ func (m *Model) restartWorkload(workload *repository.WorkloadInfo) tea.Cmd {
 			namespace:    workload.Namespace,
 			resourceType: workload.Type,
 			err:          err,
+		}
+	}
+}
+
+func (m *Model) copySecretToSingleNamespace(sourceNs, secretName, targetNs string, remaining []string, successCount, errorCount int) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+
+		// Small delay so user can see the namespace name
+		time.Sleep(300 * time.Millisecond)
+
+		// Copy to current namespace
+		err := repository.CopySecretToNamespace(ctx, m.k8sClient.Clientset(), sourceNs, secretName, targetNs)
+		if err != nil {
+			errorCount++
+		} else {
+			successCount++
+		}
+
+		// If no more remaining, return final result
+		if len(remaining) == 0 {
+			if errorCount > 0 {
+				return component.SecretCopyResult{
+					Success: false,
+					Message: fmt.Sprintf("Copied to %d namespaces, %d failed", successCount, errorCount),
+				}
+			}
+			if successCount == 1 {
+				return component.SecretCopyResult{
+					Success: true,
+					Message: fmt.Sprintf("Copied to %s", targetNs),
+				}
+			}
+			return component.SecretCopyResult{
+				Success: true,
+				Message: fmt.Sprintf("Copied to %d namespaces", successCount),
+			}
+		}
+
+		// Send progress for next namespace
+		next := remaining[0]
+		newRemaining := remaining[1:]
+		return component.SecretCopyProgress{
+			SecretName:       secretName,
+			SourceNamespace:  sourceNs,
+			CurrentNamespace: next,
+			Remaining:        newRemaining,
+			SuccessCount:     successCount,
+			ErrorCount:       errorCount,
 		}
 	}
 }

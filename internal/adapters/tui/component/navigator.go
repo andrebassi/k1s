@@ -1038,6 +1038,10 @@ func (n Navigator) SelectedNamespace() string {
 	return ""
 }
 
+func (n Navigator) GetNamespaces() []string {
+	return n.namespaces
+}
+
 func (n Navigator) SelectedResourceType() repository.ResourceType {
 	if n.cursor >= 0 && n.cursor < len(repository.AllResourceTypes) {
 		return repository.AllResourceTypes[n.cursor]
