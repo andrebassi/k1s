@@ -5,7 +5,6 @@
 #
 # Usage:
 #   curl -sSL https://raw.githubusercontent.com/andrebassi/k1s/main/scripts/install.sh | bash
-#   curl -sSL https://raw.githubusercontent.com/andrebassi/k1s/main/scripts/install.sh | bash -s -- --version v0.1.2
 #
 # Options:
 #   --version VERSION    Install specific version (default: latest)
@@ -52,12 +51,8 @@ show_help() {
     echo "  --dir DIR            Install to specific directory (default: /usr/local/bin)"
     echo "  --help               Show this help message"
     echo ""
-    echo "Examples:"
-    echo "  # Install latest version"
+    echo "Example:"
     echo "  curl -sSL https://raw.githubusercontent.com/andrebassi/k1s/main/scripts/install.sh | bash"
-    echo ""
-    echo "  # Install specific version"
-    echo "  curl -sSL https://raw.githubusercontent.com/andrebassi/k1s/main/scripts/install.sh | bash -s -- --version v0.1.2"
     echo ""
 }
 

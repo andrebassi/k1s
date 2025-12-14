@@ -169,7 +169,7 @@ test_debian_script() {
         apt-get update -qq >/dev/null 2>&1
         apt-get install -y -qq curl >/dev/null 2>&1
         echo 'Running install script...'
-        curl -sSL https://raw.githubusercontent.com/$GITHUB_REPO/main/scripts/install.sh | bash -s -- --version $VERSION
+        curl -sSL https://raw.githubusercontent.com/$GITHUB_REPO/main/scripts/install.sh | bash
     " 2>&1; then
         success "Debian install.sh script"
     else
