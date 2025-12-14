@@ -18,6 +18,7 @@ license: MIT
 contents:
   - src: ./dist/k1s-${BINARY}
     dst: /usr/bin/k1s
+    expand: true
     file_info:
       mode: 0755
 
