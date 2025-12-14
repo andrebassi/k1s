@@ -400,3 +400,57 @@ jobs:
           git add bucket/k1s.json
           git commit -m "Update k1s to ${{ github.ref_name }}" || echo "No changes to commit"
           git push
+
+  chocolatey:
+    name: Publish to Chocolatey
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Download checksums
+        shell: bash
+        run: |
+          curl -L -o checksums.txt https://github.com/andrebassi/k1s/releases/download/${{ github.ref_name }}/checksums.txt
+          cat checksums.txt
+
+      - name: Get SHA256 sum
+        id: sha
+        shell: bash
+        run: |
+          echo "WINDOWS_AMD64=$(grep windows-amd64 checksums.txt | awk '{print $1}')" >> $GITHUB_OUTPUT
+
+      - name: Update nuspec version
+        shell: pwsh
+        run: |
+          $nuspec = Get-Content chocolatey/k1s.nuspec -Raw
+          $nuspec = $nuspec -replace '<version>.*</version>', '<version>${{ steps.version.outputs.VERSION }}</version>'
+          Set-Content chocolatey/k1s.nuspec $nuspec
+
+      - name: Update install script
+        shell: pwsh
+        run: |
+          $install = Get-Content chocolatey/tools/chocolateyinstall.ps1 -Raw
+          $install = $install -replace "\`$version = '.*'", "`$version = '${{ steps.version.outputs.VERSION }}'"
+          $install = $install -replace "checksum64\s*=\s*'.*'", "checksum64    = '${{ steps.sha.outputs.WINDOWS_AMD64 }}'"
+          Set-Content chocolatey/tools/chocolateyinstall.ps1 $install
+
+      - name: Pack Chocolatey package
+        shell: pwsh
+        run: |
+          cd chocolatey
+          choco pack
+
+      - name: Push to Chocolatey
+        shell: pwsh
+        env:
+          CHOCO_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
+        run: |
+          cd chocolatey
+          choco push k1s.${{ steps.version.outputs.VERSION }}.nupkg --source https://push.chocolatey.org/ --api-key $env:CHOCO_API_KEY

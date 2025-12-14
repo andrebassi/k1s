@@ -93,6 +93,12 @@ brew tap andrebassi/k1s
 brew install k1s
 ```
 
+### Via Chocolatey (Windows)
+
+```powershell
+choco install k1s
+```
+
 ### Via Scoop (Windows)
 
 ```powershell
