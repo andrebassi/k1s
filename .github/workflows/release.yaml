@@ -27,10 +27,10 @@ jobs:
           - goos: linux
             goarch: arm64
             name: linux-arm64
-          - goos: linux
+          - goos: android
             goarch: arm64
             name: android-arm64
-            buildmode: pie
+            cgo: true
           - goos: linux
             goarch: arm
             goarm: "7"
@@ -53,31 +53,31 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
+      - name: Setup Android NDK
+        if: matrix.cgo == true
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26b
+
       - name: Build binary
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           GOARM: ${{ matrix.goarm }}
-          CGO_ENABLED: 0
         run: |
           mkdir -p dist
-          BUILDMODE=""
-          if [ "${{ matrix.buildmode }}" = "pie" ]; then
-            BUILDMODE="-buildmode=pie"
-          fi
-          go build $BUILDMODE -trimpath -ldflags "-s -w -X main.version=${{ steps.version.outputs.VERSION }} -X main.commit=${GITHUB_SHA::7} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o dist/k1s-${{ matrix.name }}${{ matrix.ext }} ./cmd/k1s
 
-      - name: Fix Android binary TLS alignment
-        if: matrix.name == 'android-arm64'
-        run: |
-          # Install termux-elf-cleaner
-          git clone https://github.com/termux/termux-elf-cleaner.git /tmp/termux-elf-cleaner
-          cd /tmp/termux-elf-cleaner
-          mkdir build && cd build
-          cmake ..
-          make
-          # Fix TLS alignment for Android/Termux
-          ./termux-elf-cleaner $GITHUB_WORKSPACE/dist/k1s-android-arm64
+          if [ "${{ matrix.cgo }}" = "true" ]; then
+            # Android build with CGO
+            export CGO_ENABLED=1
+            export CC=${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
+            export CXX=${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang++
+          else
+            export CGO_ENABLED=0
+          fi
+
+          go build -trimpath -ldflags "-s -w -X main.version=${{ steps.version.outputs.VERSION }} -X main.commit=${GITHUB_SHA::7} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o dist/k1s-${{ matrix.name }}${{ matrix.ext }} ./cmd/k1s
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
