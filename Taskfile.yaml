@@ -448,3 +448,63 @@ tasks:
         echo "# Uninstall:"
         echo "sudo dnf remove k1s"
         echo ""
+
+  # ============================================
+  # Docker Installation Tests
+  # ============================================
+
+  test:docker:all:
+    desc: Run all Docker installation tests
+    vars:
+      TAG:
+        sh: git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.2"
+    cmds:
+      - K1S_VERSION={{.TAG}} ./scripts/test-install.sh all
+
+  test:docker:debian:
+    desc: Test .deb installation on Debian
+    vars:
+      TAG:
+        sh: git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.2"
+    cmds:
+      - K1S_VERSION={{.TAG}} ./scripts/test-install.sh debian
+
+  test:docker:ubuntu:
+    desc: Test .deb installation on Ubuntu
+    vars:
+      TAG:
+        sh: git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.2"
+    cmds:
+      - K1S_VERSION={{.TAG}} ./scripts/test-install.sh ubuntu
+
+  test:docker:fedora:
+    desc: Test .rpm installation on Fedora
+    vars:
+      TAG:
+        sh: git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.2"
+    cmds:
+      - K1S_VERSION={{.TAG}} ./scripts/test-install.sh fedora
+
+  test:docker:rocky:
+    desc: Test .rpm installation on Rocky Linux
+    vars:
+      TAG:
+        sh: git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.2"
+    cmds:
+      - K1S_VERSION={{.TAG}} ./scripts/test-install.sh rocky
+
+  test:docker:alpine:
+    desc: Test binary installation on Alpine
+    vars:
+      TAG:
+        sh: git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.2"
+    cmds:
+      - K1S_VERSION={{.TAG}} ./scripts/test-install.sh alpine
+
+  test:local:
+    desc: Test installation on local machine (macOS)
+    vars:
+      TAG:
+        sh: git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.2"
+    cmds:
+      - K1S_VERSION={{.TAG}} ./scripts/test-install.sh local
