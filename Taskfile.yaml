@@ -517,7 +517,7 @@ tasks:
           apt-get update -qq >/dev/null 2>&1
           apt-get install -y -qq curl >/dev/null 2>&1
           echo '=== Testing curl install on Debian ==='
-          curl -sSL https://cdn.jsdelivr.net/gh/andrebassi/k1s@main/scripts/install.sh | bash
+          curl -sSL https://raw.githubusercontent.com/andrebassi/k1s/main/scripts/install.sh | bash
         "
 
   test:docker:curl:ubuntu:
@@ -528,7 +528,7 @@ tasks:
           apt-get update -qq >/dev/null 2>&1
           apt-get install -y -qq curl >/dev/null 2>&1
           echo '=== Testing curl install on Ubuntu ==='
-          curl -sSL https://cdn.jsdelivr.net/gh/andrebassi/k1s@main/scripts/install.sh | bash
+          curl -sSL https://raw.githubusercontent.com/andrebassi/k1s/main/scripts/install.sh | bash
         "
 
   test:docker:curl:fedora:
@@ -537,7 +537,7 @@ tasks:
       - |
         docker run --rm fedora:latest bash -c "
           echo '=== Testing curl install on Fedora ==='
-          curl -sSL https://cdn.jsdelivr.net/gh/andrebassi/k1s@main/scripts/install.sh | bash
+          curl -sSL https://raw.githubusercontent.com/andrebassi/k1s/main/scripts/install.sh | bash
         "
 
   test:docker:curl:alpine:
@@ -547,7 +547,7 @@ tasks:
         docker run --rm alpine:latest sh -c "
           apk add --no-cache curl bash >/dev/null 2>&1
           echo '=== Testing curl install on Alpine ==='
-          curl -sSL https://cdn.jsdelivr.net/gh/andrebassi/k1s@main/scripts/install.sh | bash
+          curl -sSL https://raw.githubusercontent.com/andrebassi/k1s/main/scripts/install.sh | bash
         "
 
   test:docker:curl:all:

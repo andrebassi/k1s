@@ -83,7 +83,7 @@ k1s is a terminal-based user interface (TUI) for debugging Kubernetes workloads.
 curl -sSL https://raw.githubusercontent.com/andrebassi/k1s/main/scripts/install.sh | bash
 
 # Via jsDelivr CDN (faster updates)
-curl -sSL https://cdn.jsdelivr.net/gh/andrebassi/k1s@main/scripts/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/andrebassi/k1s/main/scripts/install.sh | bash
 ```
 
 ### Via Homebrew (macOS/Linux)
@@ -122,7 +122,7 @@ paru -S k1s-bin
 
 ```bash
 # Install via curl (recommended)
-curl -sSL https://cdn.jsdelivr.net/gh/andrebassi/k1s@main/scripts/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/andrebassi/k1s/main/scripts/install.sh | bash
 
 # Or download directly (PIE binary for Android)
 curl -L -o $PREFIX/bin/k1s https://github.com/andrebassi/k1s/releases/latest/download/k1s-android-arm64
