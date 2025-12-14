@@ -76,6 +76,12 @@ k1s is a terminal-based user interface (TUI) for debugging Kubernetes workloads.
 
 ## Installation
 
+### Quick Install (Recommended)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/andrebassi/k1s/main/scripts/install.sh | bash
+```
+
 ### Via Homebrew (macOS/Linux)
 
 ```bash
@@ -294,8 +300,17 @@ task test:brew
 # Test MacPorts installation
 task test:macports
 
-# Verify installation
-task test:brew:verify
+# Test all Docker installations (Debian, Ubuntu, Fedora, Alpine)
+task test:docker:all
+
+# Test specific platform
+task test:docker:debian
+task test:docker:ubuntu
+task test:docker:fedora
+task test:docker:alpine
+
+# Test local macOS installation
+task test:local
 ```
 
 ## Technology Stack
