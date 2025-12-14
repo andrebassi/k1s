@@ -313,7 +313,8 @@ func (n Navigator) View() string {
 		b.WriteString(clearHint)
 		b.WriteString("\n\n")
 	} else {
-		b.WriteString("\n")
+		// Empty line to maintain consistent table position (same as nodes panel)
+		b.WriteString("\n\n")
 	}
 
 	// Content based on mode
@@ -750,7 +751,6 @@ func (n Navigator) renderNamespaces() string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(n.renderScrollIndicator(visible, len(namespaces)))
 	return b.String()
 }
 
@@ -824,7 +824,7 @@ func (n Navigator) calculateVisibleWindow(cursor, total, visibleRows int) (start
 func (n Navigator) visibleRange(total int) visibleRange {
 	maxVisible := n.height - 8
 	if maxVisible < 5 {
-		maxVisible = 15
+		maxVisible = 5
 	}
 
 	start := 0

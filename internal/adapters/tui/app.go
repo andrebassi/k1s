@@ -814,7 +814,7 @@ func (m Model) View() string {
 			m.navigator.SetPanelActive(!m.nodesPanelActive)
 
 			leftContent := m.navigator.View()
-			rightContent := m.renderNodesPanel(rightWidth, contentHeight)
+			rightContent := m.renderNodesPanel(rightWidth, m.height-3) // Match navigator height
 
 			// Join panels side by side
 			content = lipgloss.JoinHorizontal(
@@ -965,7 +965,7 @@ func (m Model) renderNodesPanel(width, height int) string {
 	b.WriteString("\n")
 
 	// Calculate visible window for scrolling
-	maxVisible := height - 8 // Reserve space for header, footer, help
+	maxVisible := height - 8 // Account for header and footer (same as namespace)
 	if maxVisible < 5 {
 		maxVisible = 5
 	}
@@ -1022,22 +1022,6 @@ func (m Model) renderNodesPanel(width, height int) string {
 		}
 		b.WriteString("\n")
 	}
-
-	// Fill remaining space to push footer to bottom
-	renderedRows := endIdx - startIdx
-	for i := renderedRows; i < maxVisible; i++ {
-		b.WriteString("\n")
-	}
-
-	// Footer: position and help (same format as namespace panel)
-	b.WriteString("\n\n\n")
-	percent := 0
-	if len(nodes) > 0 {
-		percent = (m.nodeCursor + 1) * 100 / len(nodes)
-	}
-	b.WriteString(style.StatusMuted.Render(fmt.Sprintf("%d/%d (%d%%)", m.nodeCursor+1, len(nodes), percent)))
-	b.WriteString("\n")
-	b.WriteString(style.StatusMuted.Render("Tab:switch  Enter:show pods"))
 
 	return b.String()
 }
