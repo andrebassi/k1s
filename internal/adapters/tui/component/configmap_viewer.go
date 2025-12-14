@@ -404,14 +404,6 @@ func (v ConfigMapViewer) View() string {
 		return ""
 	}
 
-	// Handle different modes
-	switch v.mode {
-	case ConfigMapViewerModeAction:
-		return v.renderActionMenu()
-	case ConfigMapViewerModeNamespace:
-		return v.renderNamespaceSelector()
-	}
-
 	var header strings.Builder
 	var content strings.Builder
 
@@ -522,70 +514,71 @@ func (v ConfigMapViewer) View() string {
 		footer = style.StatusMuted.Render("a:actions  Esc:close") + statusIndicator
 	}
 
-	return header.String() + boxedContent + "\n" + footer
+	result := header.String() + boxedContent + "\n" + footer
+
+	// Render overlay for action menu
+	if v.mode == ConfigMapViewerModeAction {
+		overlay := v.renderActionMenu()
+		result = v.overlayContent(result, overlay)
+	}
+
+	// Render overlay for namespace selector
+	if v.mode == ConfigMapViewerModeNamespace {
+		overlay := v.renderNamespaceSelector()
+		result = v.overlayContent(result, overlay)
+	}
+
+	return result
 }
 
 func (v ConfigMapViewer) renderActionMenu() string {
 	var b strings.Builder
 
-	// Header
-	separatorStyle := lipgloss.NewStyle().Foreground(style.TextMuted)
-	itemStyle := lipgloss.NewStyle().Foreground(style.Primary)
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(style.Primary)
+	itemStyle := lipgloss.NewStyle().Foreground(style.Text)
+	selectedStyle := lipgloss.NewStyle().Bold(true).Foreground(style.Text).Background(style.Primary)
+	shortcutStyle := lipgloss.NewStyle().Foreground(style.Secondary)
 
-	breadcrumb := itemStyle.Render(v.namespace) +
-		separatorStyle.Render(" > ") +
-		itemStyle.Render("configmaps") +
-		separatorStyle.Render(" > ") +
-		itemStyle.Render(v.configmap.Name) +
-		separatorStyle.Render(" > ") +
-		itemStyle.Render("Actions")
-	b.WriteString(breadcrumb)
+	b.WriteString(titleStyle.Render("ConfigMap Actions"))
 	b.WriteString("\n\n")
 
-	// Action menu items
-	selectedStyle := lipgloss.NewStyle().Bold(true).Foreground(style.Text).Background(style.Primary)
-	normalStyle := lipgloss.NewStyle().Foreground(style.Text)
-
 	actions := []string{
-		"[1] Copy to namespace...",
-		"[2] Copy to all namespaces",
+		"Copy to namespace...",
+		"Copy to all namespaces",
 	}
 
 	for i, action := range actions {
+		shortcut := fmt.Sprintf("[%d] ", i+1)
 		if i == v.actionCursor {
-			b.WriteString(selectedStyle.Render("> " + action))
+			b.WriteString(selectedStyle.Render("> " + shortcut + action))
 		} else {
-			b.WriteString(normalStyle.Render("  " + action))
+			b.WriteString("  " + shortcutStyle.Render(shortcut) + itemStyle.Render(action))
 		}
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
-	b.WriteString(style.StatusMuted.Render("↑↓:select  Enter/1/2:choose  Esc:back"))
+	b.WriteString(style.StatusMuted.Render("↑↓:select  Enter:confirm  Esc:cancel"))
 
-	return b.String()
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(style.Primary).
+		Padding(1, 2).
+		Width(40)
+
+	return boxStyle.Render(b.String())
 }
 
 func (v ConfigMapViewer) renderNamespaceSelector() string {
 	var b strings.Builder
 
-	// Header
-	separatorStyle := lipgloss.NewStyle().Foreground(style.TextMuted)
-	itemStyle := lipgloss.NewStyle().Foreground(style.Primary)
-
-	breadcrumb := itemStyle.Render(v.namespace) +
-		separatorStyle.Render(" > ") +
-		itemStyle.Render("configmaps") +
-		separatorStyle.Render(" > ") +
-		itemStyle.Render(v.configmap.Name) +
-		separatorStyle.Render(" > ") +
-		itemStyle.Render("Select Namespace")
-	b.WriteString(breadcrumb)
-	b.WriteString("\n\n")
-
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(style.Primary)
+	itemStyle := lipgloss.NewStyle().Foreground(style.Text)
 	selectedStyle := lipgloss.NewStyle().Bold(true).Foreground(style.Text).Background(style.Primary)
-	normalStyle := lipgloss.NewStyle().Foreground(style.Text)
-	currentNsStyle := lipgloss.NewStyle().Foreground(style.Secondary)
+	currentNsStyle := lipgloss.NewStyle().Foreground(style.TextMuted)
+
+	b.WriteString(titleStyle.Render("Select Target Namespace"))
+	b.WriteString("\n")
 
 	// Search bar
 	if v.nsSearchQuery != "" {
@@ -623,7 +616,7 @@ func (v ConfigMapViewer) renderNamespaceSelector() string {
 				b.WriteString(selectedStyle.Render("> " + ns))
 				b.WriteString(suffix)
 			} else {
-				b.WriteString(prefix + normalStyle.Render(ns) + suffix)
+				b.WriteString(prefix + itemStyle.Render(ns) + suffix)
 			}
 			b.WriteString("\n")
 		}
@@ -637,7 +630,27 @@ func (v ConfigMapViewer) renderNamespaceSelector() string {
 	b.WriteString("\n")
 	b.WriteString(style.StatusMuted.Render("↑↓:select  Enter:copy  Esc:back"))
 
-	return b.String()
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(style.Primary).
+		Padding(1, 2).
+		Width(50).
+		MaxHeight(25)
+
+	return boxStyle.Render(b.String())
+}
+
+func (v ConfigMapViewer) overlayContent(base, overlay string) string {
+	// Center the overlay on the screen
+	return lipgloss.Place(
+		v.width,
+		v.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		overlay,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(style.Background),
+	)
 }
 
 func (v *ConfigMapViewer) Show(cm *repository.ConfigMapData, namespace string) {
