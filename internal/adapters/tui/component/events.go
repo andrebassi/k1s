@@ -196,14 +196,10 @@ func (e *EventsPanel) updateContent() {
 	var content strings.Builder
 	events := e.getDisplayedEvents()
 
-	if len(events) == 0 {
-		content.WriteString(style.StatusMuted.Render("No events found"))
-	} else {
-		for i, event := range events {
-			line := e.formatEvent(event, i == e.cursor)
-			content.WriteString(line)
-			content.WriteString("\n")
-		}
+	for i, event := range events {
+		line := e.formatEvent(event, i == e.cursor)
+		content.WriteString(line)
+		content.WriteString("\n")
 	}
 
 	e.viewport.SetContent(content.String())
