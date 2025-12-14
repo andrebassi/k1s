@@ -79,12 +79,10 @@ k1s is a terminal-based user interface (TUI) for debugging Kubernetes workloads.
 ### Quick Install (Recommended)
 
 ```bash
-# Via GitHub (may have cache delay)
-curl -sSL https://raw.githubusercontent.com/andrebassi/k1s/main/scripts/install.sh | bash
-
-# Via jsDelivr CDN (faster updates)
 curl -sSL https://raw.githubusercontent.com/andrebassi/k1s/main/scripts/install.sh | bash
 ```
+
+> **Note:** The install script automatically detects your OS/architecture and installs kubectl if not found.
 
 ### Via Homebrew (macOS/Linux)
 
@@ -213,7 +211,7 @@ go install github.com/andrebassi/k1s/cmd/k1s@latest
 
 ## Requirements
 
-- kubectl configured with cluster access
+- kubectl configured with cluster access (auto-installed by install script if missing)
 - metrics-server (optional, for CPU/Memory metrics)
 
 ## Usage
@@ -370,7 +368,12 @@ k1s/
 │   │       └── style/      # Styling
 │   ├── domain/           # Domain entities and interfaces
 │   └── usecase/          # Business logic
-├── ports/                # Package manager files (MacPorts)
+├── scripts/              # Install and test scripts
+├── chocolatey/           # Chocolatey package (Windows)
+├── aur/                  # AUR package (Arch Linux)
+├── termux/               # Termux package (Android)
+├── ports/                # MacPorts package (macOS)
+├── .github/workflows/    # CI/CD release workflow
 ├── Taskfile.yaml         # Task runner configuration
 └── go.mod
 ```
