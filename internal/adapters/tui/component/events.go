@@ -142,6 +142,17 @@ func (e EventsPanel) View() string {
 
 	result := header.String() + e.viewport.View()
 
+	// Show "No events found" at bottom right
+	events := e.getDisplayedEvents()
+	if len(events) == 0 {
+		hint := style.StatusMuted.Render("No events found")
+		hintLen := 15
+		padding := e.width - hintLen
+		if padding > 0 {
+			result += "\n" + strings.Repeat(" ", padding) + hint
+		}
+	}
+
 	// Show copy status at bottom right
 	if e.copyStatus != "" {
 		padding := e.width - len(e.copyStatus) - 4
