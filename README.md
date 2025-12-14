@@ -1,19 +1,77 @@
 # k1s
 
-Kubernetes TUI Debugger - One screen to see why your pod is broken.
+Kubernetes TUI Debugger - **One screen to see why your pod is broken.**
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Go Version](https://img.shields.io/badge/go-1.21+-00ADD8.svg)
+![Platform](https://img.shields.io/badge/platform-macOS%20|%20Linux%20|%20Windows-lightgrey.svg)
+
+## Overview
+
+k1s is a terminal-based user interface (TUI) for debugging Kubernetes workloads. It provides real-time logs, events, metrics, and resource inspection in a single dashboard view.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              k1s - Namespace: prod                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ PODS                                                                         │
+│ ▶ api-server-7d8f9c6b5-abc12    Running    1/1    0    2d                   │
+│   worker-5f4e3d2c1-def34        Running    1/1    5    1d                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ HPA                                                                          │
+│   api-server    Deployment/api-server    cpu: 45%/80%    2    10    3       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ CONFIGMAPS                           │ SECRETS                              │
+│   app-config         3 keys          │   db-credentials    Opaque    2 keys │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ## Features
 
+### Pod Debugging Dashboard
+4-panel layout showing everything you need:
+```
+┌─────────────────────┬─────────────────────┐
+│        Logs         │       Events        │
+│  (container logs)   │   (pod events)      │
+├─────────────────────┼─────────────────────┤
+│     Pod Details     │   Resource Usage    │
+│   (info + related)  │  (CPU/Mem + Node)   │
+└─────────────────────┴─────────────────────┘
+```
+
+### Resource Management
+- **Pods**: Status, Ready count, Restarts, Age
+- **HPAs**: Reference, Targets (CPU/Memory/External/KEDA), Min/Max/Current Replicas
+- **ConfigMaps**: Key count, Age, full data viewing
+- **Secrets**: Type, Key count, base64-decoded viewing
+- **Docker Registry**: Registry credentials viewing
+
+### Workload Operations
+- Support for: Deployments, StatefulSets, DaemonSets, Jobs, CronJobs, Argo Rollouts
+- Scale up/down workloads
+- Rolling restart with confirmation
+- Delete pods
+
+### Namespace Management
+- List all namespaces with status (Active/Terminating)
+- Color-coded status indicators
+- Force delete stuck Terminating namespaces
+- Split view with Nodes panel
+
+### Cross-Namespace Copy
+- Copy ConfigMaps to single namespace or all namespaces
+- Copy Secrets to single namespace or all namespaces
+- Copy Docker Registry secrets
+- Progress indicator during batch operations
+
+### Additional Features
 - Real-time container logs with filtering and error highlighting
 - Pod events with Warning/Normal type filtering
 - Resource metrics (CPU/Memory from metrics-server)
-- HPA monitoring with KEDA support
-- ConfigMaps/Secrets viewing and cross-namespace copy
-- Navigate deployments, statefulsets, daemonsets, jobs, cronjobs
-- Scale and restart workloads
+- Istio VirtualServices and Gateways detection
+- Related resources discovery (Services, Ingresses)
+- Clipboard support for copying values
 - Vim-style keyboard navigation
 
 ## Installation
@@ -35,31 +93,18 @@ sudo port install k1s
 
 ### Download Binary
 
-Download the latest release for your platform:
+| Platform | Architecture | Download |
+|----------|--------------|----------|
+| macOS | Apple Silicon (arm64) | [k1s-darwin-arm64](https://github.com/andrebassi/k1s/releases/latest/download/k1s-darwin-arm64) |
+| macOS | Intel (amd64) | [k1s-darwin-amd64](https://github.com/andrebassi/k1s/releases/latest/download/k1s-darwin-amd64) |
+| Linux | x86_64 (amd64) | [k1s-linux-amd64](https://github.com/andrebassi/k1s/releases/latest/download/k1s-linux-amd64) |
+| Linux | ARM64 | [k1s-linux-arm64](https://github.com/andrebassi/k1s/releases/latest/download/k1s-linux-arm64) |
+| Linux | ARMv7 (Raspberry Pi) | [k1s-linux-armv7](https://github.com/andrebassi/k1s/releases/latest/download/k1s-linux-armv7) |
+| Windows | x86_64 (amd64) | [k1s-windows-amd64.exe](https://github.com/andrebassi/k1s/releases/latest/download/k1s-windows-amd64.exe) |
 
 ```bash
-# macOS Apple Silicon
+# Example: macOS Apple Silicon
 curl -L -o k1s https://github.com/andrebassi/k1s/releases/latest/download/k1s-darwin-arm64
-chmod +x k1s
-sudo mv k1s /usr/local/bin/
-
-# macOS Intel
-curl -L -o k1s https://github.com/andrebassi/k1s/releases/latest/download/k1s-darwin-amd64
-chmod +x k1s
-sudo mv k1s /usr/local/bin/
-
-# Linux amd64
-curl -L -o k1s https://github.com/andrebassi/k1s/releases/latest/download/k1s-linux-amd64
-chmod +x k1s
-sudo mv k1s /usr/local/bin/
-
-# Linux arm64
-curl -L -o k1s https://github.com/andrebassi/k1s/releases/latest/download/k1s-linux-arm64
-chmod +x k1s
-sudo mv k1s /usr/local/bin/
-
-# Linux armv7 (Raspberry Pi)
-curl -L -o k1s https://github.com/andrebassi/k1s/releases/latest/download/k1s-linux-armv7
 chmod +x k1s
 sudo mv k1s /usr/local/bin/
 ```
@@ -100,60 +145,72 @@ k1s --version
 k1s --help
 ```
 
-## Key Bindings
+## Keyboard Shortcuts
 
-### Global Navigation
-
+### Global
 | Key | Action |
 |-----|--------|
-| `Tab` / `Shift+Tab` | Next/Previous section |
-| `j` / `↓` | Move down |
-| `k` / `↑` | Move up |
-| `g` / `G` | Go to top/bottom |
-| `Enter` | Select / Expand |
-| `Esc` | Go back / Close |
-| `r` | Refresh data |
-| `?` | Show help |
-| `q` | Quit |
-
-### Resource Views
-
-| Key | Action |
-|-----|--------|
-| `/` | Search / Filter |
+| `?` | Help |
+| `q`, `Ctrl+C` | Quit |
+| `r` | Refresh |
+| `Esc` | Back/Close |
+| `Enter` | Select/Expand |
+| `Tab`/`Shift+Tab` | Next/Previous section |
+| `↑`/`↓` or `j`/`k` | Navigate |
+| `/` | Search/Filter |
 | `c` | Clear filter |
+
+### Namespace View
+| Key | Action |
+|-----|--------|
+| `d` | Delete Terminating namespace |
+| `Enter` | Select namespace (or delete if Terminating) |
+| `←`/`→` | Switch between Namespace/Nodes panels |
+
+### Resources View
+| Key | Action |
+|-----|--------|
+| `Tab` | Cycle sections (Pods → HPA → ConfigMaps → Secrets → Docker Registry) |
+| `Enter` | Open viewer/dashboard for selected item |
 | `a` | Actions menu |
-| `d` | Delete (on Terminating namespaces) |
+
+### Viewers (ConfigMap, Secret, HPA)
+| Key | Action |
+|-----|--------|
+| `↑`/`↓` | Scroll/Navigate |
+| `Enter` | Copy selected value to clipboard |
+| `a` | Actions menu (copy to namespace) |
+| `g`/`G` | Go to top/bottom |
+| `Esc`/`q` | Close |
 
 ### Logs Panel
-
 | Key | Action |
 |-----|--------|
 | `f` | Toggle follow mode |
+| `/` | Search/filter logs |
 | `e` | Jump to next error |
-| `[` / `]` | Switch container |
-| `T` | Cycle time filter |
-| `P` | Previous container logs |
+| `[`/`]` | Switch container |
+| `T` | Cycle time filter (All, 5m, 15m, 1h, 6h) |
+| `P` | Toggle previous container logs |
 
-## Screenshots
+## Configuration
 
+Config file: `~/.config/k1s/configs.json`
+
+```json
+{
+  "lastNamespace": "default",
+  "lastResourceType": "deployments",
+  "refreshInterval": 5
+}
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              k1s - Namespace: prod                           │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ PODS                                                                         │
-│ ▶ api-server-7d8f9c6b5-abc12    Running    1/1    0    2d                   │
-│   worker-5f4e3d2c1-def34        Running    1/1    5    1d                   │
-│   scheduler-9a8b7c6d-ghi56      Running    1/1    0    3d                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ HPA                                                                          │
-│   api-server    Deployment/api-server    cpu: 45%/80%    2    10    3       │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ CONFIGMAPS                                                                   │
-│   app-config                    3 keys                                       │
-│   nginx-config                  1 key                                        │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `KUBECONFIG` | Path to kubeconfig file | `~/.kube/config` |
+| `K1S_NAMESPACE` | Initial namespace | `default` |
 
 ## Development
 
@@ -164,7 +221,10 @@ task build
 # Run
 task run
 
-# Clean
+# Install to /usr/local/bin
+task install
+
+# Clean build artifacts
 task clean
 
 # Format code
@@ -172,12 +232,65 @@ task fmt
 
 # Run tests
 task test
+
+# Create a release
+task release -- v0.2.0
 ```
+
+### Testing Installation
+
+```bash
+# Test Homebrew installation
+task test:brew
+
+# Test MacPorts installation
+task test:macports
+
+# Verify installation
+task test:brew:verify
+```
+
+## Technology Stack
+
+- **Language**: Go 1.21+
+- **TUI Framework**: [Bubbletea](https://github.com/charmbracelet/bubbletea)
+- **Styling**: [Lipgloss](https://github.com/charmbracelet/lipgloss)
+- **Kubernetes Client**: [client-go](https://github.com/kubernetes/client-go)
+- **Metrics**: [metrics-server client](https://github.com/kubernetes-sigs/metrics-server)
+
+## Project Structure
+
+```
+k1s/
+├── cmd/k1s/              # Entry point, CLI parsing
+├── configs/              # Configuration management
+├── internal/
+│   ├── adapters/
+│   │   ├── repository/   # Kubernetes API interactions
+│   │   └── tui/          # Terminal UI components
+│   │       ├── component/  # Reusable UI components
+│   │       ├── view/       # View layouts
+│   │       ├── keys/       # Keyboard shortcuts
+│   │       └── style/      # Styling
+│   ├── domain/           # Domain entities and interfaces
+│   └── usecase/          # Business logic
+├── ports/                # Package manager files (MacPorts)
+├── Taskfile.yaml         # Task runner configuration
+└── go.mod
+```
+
+## HPA Metrics Support
+
+k1s supports multiple HPA metric types:
+- **Resource**: CPU, Memory utilization
+- **External**: KEDA metrics, custom metrics
+- **Pods**: Pod-level metrics
+- **Object**: Object-based metrics
 
 ## Inspired by
 
 - [k9s](https://k9scli.io/) - Kubernetes CLI to manage clusters
-- [k9sight](https://github.com/doganarif/k9sight) - Original TUI for Kubernetes debugging
+- [k9sight](https://github.com/doganarif/k9sight) - TUI for Kubernetes debugging
 
 ## License
 
