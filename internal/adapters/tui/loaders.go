@@ -54,6 +54,7 @@ func (m *Model) loadInitialDataWithResources() tea.Cmd {
 		if err != nil {
 			return initialResourcesLoadedMsg{err: err}
 		}
+		hpas, _ := repository.ListHPAs(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace())
 		configmaps, _ := repository.ListConfigMaps(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace())
 		secrets, _ := repository.ListSecrets(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace())
 
@@ -61,6 +62,7 @@ func (m *Model) loadInitialDataWithResources() tea.Cmd {
 			namespaces: namespaces,
 			nodes:      nodes,
 			pods:       pods,
+			hpas:       hpas,
 			configmaps: configmaps,
 			secrets:    secrets,
 		}
@@ -100,10 +102,11 @@ func (m *Model) loadPods(workload *repository.WorkloadInfo) tea.Cmd {
 		if err != nil {
 			return resourcesLoadedMsg{err: err}
 		}
-		// Also load ConfigMaps and Secrets
+		// Also load HPAs, ConfigMaps and Secrets
+		hpas, _ := repository.ListHPAs(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace())
 		configmaps, _ := repository.ListConfigMaps(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace())
 		secrets, _ := repository.ListSecrets(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace())
-		return resourcesLoadedMsg{pods: pods, configmaps: configmaps, secrets: secrets}
+		return resourcesLoadedMsg{pods: pods, hpas: hpas, configmaps: configmaps, secrets: secrets}
 	}
 }
 
@@ -120,6 +123,7 @@ func (m *Model) loadAllResources() tea.Cmd {
 		if err != nil {
 			return resourcesLoadedMsg{err: err}
 		}
+		hpas, _ := repository.ListHPAs(ctx, m.k8sClient.Clientset(), ns)
 		configmaps, _ := repository.ListConfigMaps(ctx, m.k8sClient.Clientset(), ns)
 		secrets, _ := repository.ListSecrets(ctx, m.k8sClient.Clientset(), ns)
 
@@ -146,7 +150,7 @@ func (m *Model) loadAllResources() tea.Cmd {
 			}
 		}
 
-		return resourcesLoadedMsg{pods: pods, configmaps: configmaps, secrets: secrets, workload: workload}
+		return resourcesLoadedMsg{pods: pods, hpas: hpas, configmaps: configmaps, secrets: secrets, workload: workload}
 	}
 }
 
@@ -161,6 +165,20 @@ func (m *Model) loadConfigMapData(name string) tea.Cmd {
 			return configMapDataMsg{err: err}
 		}
 		return configMapDataMsg{data: data}
+	}
+}
+
+// loadHPAData fetches the full data of a specific HPA.
+// This is called when user selects an HPA to view its details.
+// Returns a hpaDataMsg with the HPA data including metrics and conditions.
+func (m *Model) loadHPAData(name string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		data, err := repository.GetHPA(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace(), name)
+		if err != nil {
+			return hpaDataMsg{err: err}
+		}
+		return hpaDataMsg{data: data}
 	}
 }
 

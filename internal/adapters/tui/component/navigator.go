@@ -30,6 +30,7 @@ type PodViewSection int
 // Available sections in the resources view.
 const (
 	SectionPods           PodViewSection = iota // Pod list section
+	SectionHPAs                                 // HPA list section
 	SectionConfigMaps                           // ConfigMap list section
 	SectionSecrets                              // Secret list section
 	SectionDockerRegistry                       // Docker registry secrets section
@@ -40,12 +41,13 @@ const (
 type Navigator struct {
 	workloads    []repository.WorkloadInfo
 	pods         []repository.PodInfo
+	hpas         []repository.HPAInfo
 	configmaps   []repository.ConfigMapInfo
 	secrets      []repository.SecretInfo
 	namespaces   []repository.NamespaceInfo
 	cursor       int
 	section      PodViewSection // Current section in pods view
-	sectionCursors [4]int       // Cursor for each section (Pods, ConfigMaps, Secrets, DockerRegistry)
+	sectionCursors [5]int       // Cursor for each section (Pods, HPAs, ConfigMaps, Secrets, DockerRegistry)
 	mode         NavigatorMode
 	width        int
 	height       int
@@ -232,17 +234,19 @@ func (n *Navigator) pageDown() {
 }
 
 func (n *Navigator) nextSection() {
-	n.section = (n.section + 1) % 4
+	n.section = (n.section + 1) % 5
 }
 
 func (n *Navigator) prevSection() {
-	n.section = (n.section + 3) % 4
+	n.section = (n.section + 4) % 5
 }
 
 func (n Navigator) sectionMaxItems() int {
 	switch n.section {
 	case SectionPods:
 		return len(n.filteredPods())
+	case SectionHPAs:
+		return len(n.hpas)
 	case SectionConfigMaps:
 		return len(n.configmaps)
 	case SectionSecrets:
@@ -413,17 +417,25 @@ func (n Navigator) renderResources() string {
 	var b strings.Builder
 
 	// Calculate height for each section
-	totalHeight := n.height - 8 // Reserve space for headers
-	podsHeight := totalHeight * 40 / 100      // 40%
-	cmHeight := totalHeight * 20 / 100        // 20%
-	secretsHeight := totalHeight * 20 / 100   // 20%
-	dockerHeight := totalHeight * 20 / 100    // 20%
+	totalHeight := n.height - 10 // Reserve space for headers
+	podsHeight := totalHeight * 30 / 100      // 30%
+	hpaHeight := totalHeight * 15 / 100       // 15%
+	cmHeight := totalHeight * 18 / 100        // 18%
+	secretsHeight := totalHeight * 18 / 100   // 18%
+	dockerHeight := totalHeight * 19 / 100    // 19%
 
 	// PODS Section
 	sectionActive := n.section == SectionPods
 	b.WriteString(n.renderSectionHeader("PODS", len(n.pods), sectionActive))
 	b.WriteString("\n")
 	b.WriteString(n.renderPodsTable(podsHeight, sectionActive))
+	b.WriteString("\n\n")
+
+	// HPA Section
+	sectionActive = n.section == SectionHPAs
+	b.WriteString(n.renderSectionHeader("HPA", len(n.hpas), sectionActive))
+	b.WriteString("\n")
+	b.WriteString(n.renderHPAsTable(hpaHeight, sectionActive))
 	b.WriteString("\n\n")
 
 	// CONFIGMAPS Section
@@ -524,6 +536,63 @@ func (n Navigator) renderPodsTable(maxRows int, active bool) string {
 	}
 
 	return b.String()
+}
+
+func (n Navigator) renderHPAsTable(maxRows int, active bool) string {
+	if len(n.hpas) == 0 {
+		return style.StatusMuted.Render("  No HPAs found")
+	}
+
+	var b strings.Builder
+	header := fmt.Sprintf("  %-30s %-25s %-30s %-6s %-6s %-6s %-6s", "NAME", "REFERENCE", "TARGETS", "MIN", "MAX", "REPL", "AGE")
+	b.WriteString(style.TableHeaderStyle.Render(header))
+	b.WriteString("\n")
+
+	cursor := n.sectionCursors[SectionHPAs]
+	visibleRows := maxRows - 1
+
+	startIdx, endIdx := n.calculateVisibleWindow(cursor, len(n.hpas), visibleRows)
+
+	if startIdx > 0 {
+		b.WriteString(style.StatusMuted.Render(fmt.Sprintf("  ... %d more above", startIdx)))
+		b.WriteString("\n")
+		visibleRows--
+		endIdx = startIdx + visibleRows
+		if endIdx > len(n.hpas) {
+			endIdx = len(n.hpas)
+		}
+	}
+
+	for i := startIdx; i < endIdx; i++ {
+		selected := active && i == cursor
+		b.WriteString(n.renderHPARow(n.hpas[i], selected))
+		b.WriteString("\n")
+	}
+
+	if endIdx < len(n.hpas) {
+		b.WriteString(style.StatusMuted.Render(fmt.Sprintf("  ... and %d more", len(n.hpas)-endIdx)))
+	}
+
+	return b.String()
+}
+
+func (n Navigator) renderHPARow(hpa repository.HPAInfo, selected bool) string {
+	cursorStr := "  "
+	if selected {
+		cursorStr = style.CursorStyle.Render("> ")
+	}
+
+	name := style.Truncate(hpa.Name, 30)
+	reference := style.Truncate(hpa.Reference, 25)
+	targets := style.Truncate(hpa.Targets, 30)
+
+	if selected {
+		rowStyle := lipgloss.NewStyle().Background(style.Surface)
+		return rowStyle.Render(fmt.Sprintf("%s%-30s %-25s %-30s %-6d %-6d %-6d %-6s",
+			cursorStr, name, reference, targets, hpa.MinReplicas, hpa.MaxReplicas, hpa.Replicas, hpa.Age))
+	}
+	return fmt.Sprintf("%s%-30s %-25s %-30s %-6d %-6d %-6d %-6s",
+		cursorStr, name, reference, targets, hpa.MinReplicas, hpa.MaxReplicas, hpa.Replicas, hpa.Age)
 }
 
 func (n Navigator) renderConfigMapsTable(maxRows int, active bool) string {
@@ -939,6 +1008,16 @@ func (n *Navigator) SetPods(pods []repository.PodInfo) {
 	}
 }
 
+func (n *Navigator) SetHPAs(hpas []repository.HPAInfo) {
+	n.hpas = hpas
+	if n.sectionCursors[SectionHPAs] >= len(hpas) {
+		n.sectionCursors[SectionHPAs] = len(hpas) - 1
+	}
+	if n.sectionCursors[SectionHPAs] < 0 {
+		n.sectionCursors[SectionHPAs] = 0
+	}
+}
+
 func (n *Navigator) SetConfigMaps(cms []repository.ConfigMapInfo) {
 	n.configmaps = cms
 	if n.sectionCursors[SectionConfigMaps] >= len(cms) {
@@ -1007,6 +1086,14 @@ func (n Navigator) SelectedPod() *repository.PodInfo {
 	cursor := n.sectionCursors[SectionPods]
 	if cursor >= 0 && cursor < len(pods) {
 		return &pods[cursor]
+	}
+	return nil
+}
+
+func (n Navigator) SelectedHPA() *repository.HPAInfo {
+	cursor := n.sectionCursors[SectionHPAs]
+	if cursor >= 0 && cursor < len(n.hpas) {
+		return &n.hpas[cursor]
 	}
 	return nil
 }

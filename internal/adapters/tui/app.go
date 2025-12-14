@@ -44,6 +44,7 @@ type Model struct {
 	configMapViewer        component.ConfigMapViewer
 	secretViewer           component.SecretViewer
 	dockerRegistryViewer   component.DockerRegistryViewer
+	hpaViewer              component.HPAViewer
 	isDockerRegistrySecret bool // Track if we're viewing a docker registry secret
 	view                   ViewState
 	width              int
@@ -122,6 +123,7 @@ func NewWithOptions(opts Options) (*Model, error) {
 		configMapViewer:      component.NewConfigMapViewer(),
 		secretViewer:         component.NewSecretViewer(),
 		dockerRegistryViewer: component.NewDockerRegistryViewer(),
+		hpaViewer:            component.NewHPAViewer(),
 		view:                 ViewNavigator,
 		loading:            true,
 		keys:               keys.DefaultKeyMap(),
@@ -182,6 +184,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.navigator.SetPods(msg.pods)
+		m.navigator.SetHPAs(msg.hpas)
 		m.navigator.SetConfigMaps(msg.configmaps)
 		m.navigator.SetSecrets(msg.secrets)
 		m.navigator.SetMode(component.ModeResources)
@@ -203,6 +206,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.navigator.SetNamespaces(msg.namespaces)
 		m.nodes = msg.nodes
 		m.navigator.SetPods(msg.pods)
+		m.navigator.SetHPAs(msg.hpas)
 		m.navigator.SetConfigMaps(msg.configmaps)
 		m.navigator.SetSecrets(msg.secrets)
 		m.navigator.SetMode(component.ModeResources)
@@ -243,6 +247,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case component.DockerRegistryViewerClosed:
 		// Docker Registry viewer was closed
+		return m, nil
+
+	case hpaDataMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.statusMsg = "Error loading HPA: " + msg.err.Error()
+			return m, nil
+		}
+		m.hpaViewer.SetSize(m.width, m.height)
+		m.hpaViewer.Show(msg.data, m.k8sClient.Namespace())
+		return m, nil
+
+	case component.HPAViewerClosed:
+		// HPA viewer was closed
 		return m, nil
 
 	case component.SecretViewerClosed:
@@ -351,6 +369,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.selectedNode = msg.nodeName
 		m.navigator.SetPods(msg.pods)
+		m.navigator.SetHPAs(nil)       // Clear HPAs for node view
 		m.navigator.SetConfigMaps(nil) // Clear configmaps for node view
 		m.navigator.SetSecrets(nil)    // Clear secrets for node view
 		m.navigator.SetMode(component.ModeResources)
@@ -607,6 +626,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.configMapViewer.SetStatusMsg(statusText)
 				return m, m.copyConfigMapToSingleNamespace(req.SourceNamespace, req.ConfigMapName, req.TargetNamespace, nil, 0, 0)
 			}
+			return m, cmd
+		}
+
+		// HPA viewer takes priority
+		if m.hpaViewer.IsVisible() {
+			m.hpaViewer, cmd = m.hpaViewer.Update(msg)
 			return m, cmd
 		}
 

@@ -20,10 +20,11 @@ type loadedMsg struct {
 }
 
 // resourcesLoadedMsg is sent when namespace resources are loaded.
-// Contains pods, configmaps, and secrets for the selected namespace.
+// Contains pods, HPAs, configmaps, and secrets for the selected namespace.
 // Also includes the first scalable workload when no pods exist (for scale-up feature).
 type resourcesLoadedMsg struct {
 	pods       []repository.PodInfo       // Pods in the namespace (all or filtered by workload)
+	hpas       []repository.HPAInfo       // HPAs in the namespace
 	configmaps []repository.ConfigMapInfo // ConfigMaps in the namespace
 	secrets    []repository.SecretInfo    // Secrets in the namespace
 	workload   *repository.WorkloadInfo   // First scalable workload for scale controls when pods=0
@@ -105,6 +106,7 @@ type initialResourcesLoadedMsg struct {
 	namespaces []repository.NamespaceInfo // Available namespaces with status in the cluster
 	nodes      []repository.NodeInfo      // Cluster nodes with status info
 	pods       []repository.PodInfo       // Pods in the specified namespace
+	hpas       []repository.HPAInfo       // HPAs in the specified namespace
 	configmaps []repository.ConfigMapInfo // ConfigMaps in the namespace
 	secrets    []repository.SecretInfo    // Secrets in the namespace
 	err        error                      // Error if loading failed
@@ -115,4 +117,11 @@ type initialResourcesLoadedMsg struct {
 type namespaceDeletedMsg struct {
 	namespace string // Name of the deleted namespace
 	err       error  // Error if deletion failed (nil on success)
+}
+
+// hpaDataMsg is sent when an HPA's data is fetched.
+// Contains the full HPA data with metrics, conditions, and status.
+type hpaDataMsg struct {
+	data *repository.HPAData // HPA data including metrics and conditions
+	err  error               // Error if fetch failed
 }

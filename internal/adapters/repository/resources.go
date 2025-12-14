@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
@@ -204,6 +205,17 @@ type SecretInfo struct {
 	Type string // Secret type (Opaque, kubernetes.io/tls, etc.)
 	Age  string // Human-readable age
 	Keys int    // Number of data keys
+}
+
+// HPAInfo provides a summary of a HorizontalPodAutoscaler resource.
+type HPAInfo struct {
+	Name        string // HPA name
+	Reference   string // Target reference (e.g., Deployment/my-app)
+	Targets     string // Current/Target metrics (e.g., "50%/80%")
+	MinReplicas int32  // Minimum replicas
+	MaxReplicas int32  // Maximum replicas
+	Replicas    int32  // Current replicas
+	Age         string // Human-readable age
 }
 
 // ListNamespaces returns all namespaces in the cluster with their status, sorted alphabetically.
@@ -617,6 +629,257 @@ func GetConfigMap(ctx context.Context, clientset *kubernetes.Clientset, namespac
 		Age:       formatAge(cm.CreationTimestamp.Time),
 		Data:      cm.Data,
 	}, nil
+}
+
+// ListHPAs returns all HorizontalPodAutoscalers in a namespace
+func ListHPAs(ctx context.Context, clientset *kubernetes.Clientset, namespace string) ([]HPAInfo, error) {
+	hpas, err := clientset.AutoscalingV2().HorizontalPodAutoscalers(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	var hpaInfos []HPAInfo
+	for _, hpa := range hpas.Items {
+		// Build reference string (e.g., "Deployment/my-app")
+		reference := fmt.Sprintf("%s/%s", hpa.Spec.ScaleTargetRef.Kind, hpa.Spec.ScaleTargetRef.Name)
+
+		// Build targets string showing current/target metrics
+		targets := formatHPATargets(hpa)
+
+		minReplicas := int32(1)
+		if hpa.Spec.MinReplicas != nil {
+			minReplicas = *hpa.Spec.MinReplicas
+		}
+
+		hpaInfos = append(hpaInfos, HPAInfo{
+			Name:        hpa.Name,
+			Reference:   reference,
+			Targets:     targets,
+			MinReplicas: minReplicas,
+			MaxReplicas: hpa.Spec.MaxReplicas,
+			Replicas:    hpa.Status.CurrentReplicas,
+			Age:         formatAge(hpa.CreationTimestamp.Time),
+		})
+	}
+
+	sort.Slice(hpaInfos, func(i, j int) bool {
+		return hpaInfos[i].Name < hpaInfos[j].Name
+	})
+
+	return hpaInfos, nil
+}
+
+// formatHPATargets formats HPA metrics as a readable string
+func formatHPATargets(hpa autoscalingv2.HorizontalPodAutoscaler) string {
+	var parts []string
+
+	for _, metric := range hpa.Spec.Metrics {
+		switch metric.Type {
+		case autoscalingv2.ResourceMetricSourceType:
+			if metric.Resource != nil {
+				name := string(metric.Resource.Name)
+				target := ""
+				current := ""
+
+				// Get target value
+				if metric.Resource.Target.AverageUtilization != nil {
+					target = fmt.Sprintf("%d%%", *metric.Resource.Target.AverageUtilization)
+				} else if metric.Resource.Target.AverageValue != nil {
+					target = metric.Resource.Target.AverageValue.String()
+				}
+
+				// Get current value from status
+				for _, cm := range hpa.Status.CurrentMetrics {
+					if cm.Type == autoscalingv2.ResourceMetricSourceType && cm.Resource != nil && cm.Resource.Name == metric.Resource.Name {
+						if cm.Resource.Current.AverageUtilization != nil {
+							current = fmt.Sprintf("%d%%", *cm.Resource.Current.AverageUtilization)
+						} else if cm.Resource.Current.AverageValue != nil {
+							current = cm.Resource.Current.AverageValue.String()
+						}
+						break
+					}
+				}
+
+				if current == "" {
+					current = "<unknown>"
+				}
+				parts = append(parts, fmt.Sprintf("%s: %s/%s", name, current, target))
+			}
+		case autoscalingv2.ExternalMetricSourceType:
+			if metric.External != nil {
+				name := metric.External.Metric.Name
+				target := ""
+				current := ""
+
+				if metric.External.Target.AverageValue != nil {
+					target = metric.External.Target.AverageValue.String()
+				} else if metric.External.Target.Value != nil {
+					target = metric.External.Target.Value.String()
+				}
+
+				// Get current value from status
+				for _, cm := range hpa.Status.CurrentMetrics {
+					if cm.Type == autoscalingv2.ExternalMetricSourceType && cm.External != nil && cm.External.Metric.Name == metric.External.Metric.Name {
+						if cm.External.Current.AverageValue != nil {
+							current = cm.External.Current.AverageValue.String()
+						} else if cm.External.Current.Value != nil {
+							current = cm.External.Current.Value.String()
+						}
+						break
+					}
+				}
+
+				if current == "" {
+					current = "<unknown>"
+				}
+				parts = append(parts, fmt.Sprintf("%s: %s/%s", name, current, target))
+			}
+		}
+	}
+
+	if len(parts) == 0 {
+		return "<none>"
+	}
+	return strings.Join(parts, ", ")
+}
+
+// HPAData holds detailed HPA information for the viewer
+type HPAData struct {
+	Name            string
+	Namespace       string
+	Age             string
+	Reference       string
+	MinReplicas     int32
+	MaxReplicas     int32
+	CurrentReplicas int32
+	DesiredReplicas int32
+	Metrics         []HPAMetricDetail
+	Conditions      []HPACondition
+	Labels          map[string]string
+	Annotations     map[string]string
+}
+
+// HPAMetricDetail holds detailed metric information
+type HPAMetricDetail struct {
+	Type    string // Resource, External, Pods, Object
+	Name    string
+	Current string
+	Target  string
+}
+
+// HPACondition holds HPA condition status
+type HPACondition struct {
+	Type    string
+	Status  string
+	Reason  string
+	Message string
+}
+
+// GetHPA returns detailed HPA information
+func GetHPA(ctx context.Context, clientset *kubernetes.Clientset, namespace, name string) (*HPAData, error) {
+	hpa, err := clientset.AutoscalingV2().HorizontalPodAutoscalers(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	minReplicas := int32(1)
+	if hpa.Spec.MinReplicas != nil {
+		minReplicas = *hpa.Spec.MinReplicas
+	}
+
+	data := &HPAData{
+		Name:            hpa.Name,
+		Namespace:       hpa.Namespace,
+		Age:             formatAge(hpa.CreationTimestamp.Time),
+		Reference:       fmt.Sprintf("%s/%s", hpa.Spec.ScaleTargetRef.Kind, hpa.Spec.ScaleTargetRef.Name),
+		MinReplicas:     minReplicas,
+		MaxReplicas:     hpa.Spec.MaxReplicas,
+		CurrentReplicas: hpa.Status.CurrentReplicas,
+		DesiredReplicas: hpa.Status.DesiredReplicas,
+		Labels:          hpa.Labels,
+		Annotations:     hpa.Annotations,
+	}
+
+	// Parse metrics
+	for _, metric := range hpa.Spec.Metrics {
+		detail := HPAMetricDetail{}
+		switch metric.Type {
+		case autoscalingv2.ResourceMetricSourceType:
+			if metric.Resource != nil {
+				detail.Type = "Resource"
+				detail.Name = string(metric.Resource.Name)
+				if metric.Resource.Target.AverageUtilization != nil {
+					detail.Target = fmt.Sprintf("%d%%", *metric.Resource.Target.AverageUtilization)
+				} else if metric.Resource.Target.AverageValue != nil {
+					detail.Target = metric.Resource.Target.AverageValue.String()
+				}
+				// Get current value
+				for _, cm := range hpa.Status.CurrentMetrics {
+					if cm.Type == autoscalingv2.ResourceMetricSourceType && cm.Resource != nil && cm.Resource.Name == metric.Resource.Name {
+						if cm.Resource.Current.AverageUtilization != nil {
+							detail.Current = fmt.Sprintf("%d%%", *cm.Resource.Current.AverageUtilization)
+						} else if cm.Resource.Current.AverageValue != nil {
+							detail.Current = cm.Resource.Current.AverageValue.String()
+						}
+						break
+					}
+				}
+			}
+		case autoscalingv2.ExternalMetricSourceType:
+			if metric.External != nil {
+				detail.Type = "External"
+				detail.Name = metric.External.Metric.Name
+				if metric.External.Target.AverageValue != nil {
+					detail.Target = metric.External.Target.AverageValue.String()
+				} else if metric.External.Target.Value != nil {
+					detail.Target = metric.External.Target.Value.String()
+				}
+				// Get current value
+				for _, cm := range hpa.Status.CurrentMetrics {
+					if cm.Type == autoscalingv2.ExternalMetricSourceType && cm.External != nil && cm.External.Metric.Name == metric.External.Metric.Name {
+						if cm.External.Current.AverageValue != nil {
+							detail.Current = cm.External.Current.AverageValue.String()
+						} else if cm.External.Current.Value != nil {
+							detail.Current = cm.External.Current.Value.String()
+						}
+						break
+					}
+				}
+			}
+		case autoscalingv2.PodsMetricSourceType:
+			if metric.Pods != nil {
+				detail.Type = "Pods"
+				detail.Name = metric.Pods.Metric.Name
+				detail.Target = metric.Pods.Target.AverageValue.String()
+			}
+		case autoscalingv2.ObjectMetricSourceType:
+			if metric.Object != nil {
+				detail.Type = "Object"
+				detail.Name = metric.Object.Metric.Name
+				if metric.Object.Target.Value != nil {
+					detail.Target = metric.Object.Target.Value.String()
+				} else if metric.Object.Target.AverageValue != nil {
+					detail.Target = metric.Object.Target.AverageValue.String()
+				}
+			}
+		}
+		if detail.Current == "" {
+			detail.Current = "<unknown>"
+		}
+		data.Metrics = append(data.Metrics, detail)
+	}
+
+	// Parse conditions
+	for _, cond := range hpa.Status.Conditions {
+		data.Conditions = append(data.Conditions, HPACondition{
+			Type:    string(cond.Type),
+			Status:  string(cond.Status),
+			Reason:  cond.Reason,
+			Message: cond.Message,
+		})
+	}
+
+	return data, nil
 }
 
 // ListSecrets returns all secrets in a namespace

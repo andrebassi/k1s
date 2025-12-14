@@ -1,0 +1,59 @@
+version: '3'
+
+vars:
+  BINARY_NAME: k1s
+  BUILD_DIR: ./bin
+
+tasks:
+  default:
+    desc: Build and run k1s
+    cmds:
+      - task: build
+      - task: run
+
+  build:
+    desc: Build k1s binary
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}
+      - go build -o {{.BUILD_DIR}}/{{.BINARY_NAME}} ./cmd/k1s
+    sources:
+      - "**/*.go"
+    generates:
+      - "{{.BUILD_DIR}}/{{.BINARY_NAME}}"
+
+  run:
+    desc: Run k1s
+    cmds:
+      - "{{.BUILD_DIR}}/{{.BINARY_NAME}}"
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf {{.BUILD_DIR}}
+      - rm -f k1s
+
+  install:
+    desc: Install k1s to /usr/local/bin
+    deps: [build]
+    cmds:
+      - sudo cp {{.BUILD_DIR}}/{{.BINARY_NAME}} /usr/local/bin/
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test -v ./...
+
+  lint:
+    desc: Run linter
+    cmds:
+      - golangci-lint run
+
+  fmt:
+    desc: Format code
+    cmds:
+      - go fmt ./...
+
+  tidy:
+    desc: Tidy go modules
+    cmds:
+      - go mod tidy

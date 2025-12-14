@@ -14,7 +14,7 @@ import (
 // - From Dashboard: Returns to Navigator in Resources mode
 // - From Resources mode: Returns to Namespace selection
 // - From ResourceType mode: Returns to Namespace selection
-// - From Namespace mode: No action (root level)
+// - From Namespace mode: Quit application (root level)
 func (m *Model) handleBack() (tea.Model, tea.Cmd) {
 	switch m.view {
 	case ViewDashboard:
@@ -33,8 +33,9 @@ func (m *Model) handleBack() (tea.Model, tea.Cmd) {
 			m.selectedNode = "" // Clear node filter
 			return m, nil
 		case component.ModeNamespace:
-			// Stay in namespace selection (no back action)
-			return m, nil
+			// At root level - quit application
+			m.saveConfig()
+			return m, tea.Quit
 		case component.ModeResourceType:
 			m.navigator.SetMode(component.ModeNamespace)
 			return m, nil
@@ -93,6 +94,12 @@ func (m *Model) handleEnter() (tea.Model, tea.Cmd) {
 						m.loadDashboardData(pod),
 						m.tickCmd(),
 					)
+				}
+			case component.SectionHPAs:
+				hpa := m.navigator.SelectedHPA()
+				if hpa != nil {
+					m.loading = true
+					return m, m.loadHPAData(hpa.Name)
 				}
 			case component.SectionConfigMaps:
 				cm := m.navigator.SelectedConfigMap()

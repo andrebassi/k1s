@@ -22,6 +22,7 @@ import (
 //   - ConfigMap viewer (view/copy ConfigMap data)
 //   - Secret viewer (view/copy Secret data)
 //   - Docker Registry viewer (view/copy image pull secrets)
+//   - HPA viewer (view HPA details, metrics, conditions)
 //
 // The main content is wrapped in a bordered box with a status bar below.
 func (m Model) View() string {
@@ -154,6 +155,17 @@ func (m Model) renderOverlay() string {
 			m.width, m.height,
 			lipgloss.Left, lipgloss.Top,
 			m.dockerRegistryViewer.View(),
+			lipgloss.WithWhitespaceChars(" "),
+			lipgloss.WithWhitespaceForeground(style.Background),
+		)
+	}
+
+	// HPA viewer (full screen, top-left aligned)
+	if m.hpaViewer.IsVisible() {
+		return lipgloss.Place(
+			m.width, m.height,
+			lipgloss.Left, lipgloss.Top,
+			m.hpaViewer.View(),
 			lipgloss.WithWhitespaceChars(" "),
 			lipgloss.WithWhitespaceForeground(style.Background),
 		)
