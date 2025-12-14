@@ -4,7 +4,7 @@ Kubernetes TUI Debugger - **One screen to see why your pod is broken.**
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Go Version](https://img.shields.io/badge/go-1.21+-00ADD8.svg)
-![Platform](https://img.shields.io/badge/platform-macOS%20|%20Linux%20|%20Windows-lightgrey.svg)
+![Platform](https://img.shields.io/badge/platform-macOS%20|%20Linux%20|%20Windows%20|%20Android-lightgrey.svg)
 
 ## Overview
 
@@ -112,6 +112,26 @@ paru -S k1s-bin
 
 > **Note:** AUR submission pending. See [aur/k1s-bin](aur/k1s-bin/PKGBUILD) for the PKGBUILD.
 
+### Via Termux (Android)
+
+```bash
+# Install via curl
+curl -sSL https://cdn.jsdelivr.net/gh/andrebassi/k1s@main/scripts/install.sh | bash
+
+# Or download directly
+curl -L -o $PREFIX/bin/k1s https://github.com/andrebassi/k1s/releases/latest/download/k1s-linux-arm64
+chmod +x $PREFIX/bin/k1s
+```
+
+**Prerequisites for Termux:**
+```bash
+# Install required packages
+pkg install curl kubectl
+
+# Configure kubectl with your cluster
+# Copy your kubeconfig to ~/.kube/config
+```
+
 ### Via apt-get (Debian/Ubuntu)
 
 ```bash
@@ -158,6 +178,7 @@ sudo port install k1s
 | Linux | x86_64 (amd64) | [k1s-linux-amd64](https://github.com/andrebassi/k1s/releases/latest/download/k1s-linux-amd64) |
 | Linux | ARM64 | [k1s-linux-arm64](https://github.com/andrebassi/k1s/releases/latest/download/k1s-linux-arm64) |
 | Linux | ARMv7 (Raspberry Pi) | [k1s-linux-armv7](https://github.com/andrebassi/k1s/releases/latest/download/k1s-linux-armv7) |
+| Android | Termux (arm64) | [k1s-linux-arm64](https://github.com/andrebassi/k1s/releases/latest/download/k1s-linux-arm64) |
 | Windows | x86_64 (amd64) | [k1s-windows-amd64.exe](https://github.com/andrebassi/k1s/releases/latest/download/k1s-windows-amd64.exe) |
 
 ```bash

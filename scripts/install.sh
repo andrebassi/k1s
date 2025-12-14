@@ -26,6 +26,7 @@ NC='\033[0m' # No Color
 VERSION="latest"
 INSTALL_DIR="/usr/local/bin"
 GITHUB_REPO="andrebassi/k1s"
+IS_TERMUX=false
 
 # Print functions
 info() { echo -e "${BLUE}[INFO]${NC} $1"; }
@@ -83,6 +84,16 @@ parse_args() {
     done
 }
 
+# Detect Termux environment
+detect_termux() {
+    if [[ -n "$PREFIX" ]] && [[ "$PREFIX" == *"com.termux"* ]]; then
+        IS_TERMUX=true
+        INSTALL_DIR="$PREFIX/bin"
+        info "Termux environment detected"
+        info "Install directory: $INSTALL_DIR"
+    fi
+}
+
 # Detect OS
 detect_os() {
     OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -92,7 +103,17 @@ detect_os() {
         mingw*|msys*|cygwin*) OS="windows" ;;
         *)       error "Unsupported OS: $OS" ;;
     esac
-    info "Detected OS: $OS"
+
+    # Detect Termux on Linux
+    if [[ "$OS" == "linux" ]]; then
+        detect_termux
+    fi
+
+    if [[ "$IS_TERMUX" == "true" ]]; then
+        info "Detected OS: Android (Termux)"
+    else
+        info "Detected OS: $OS"
+    fi
 }
 
 # Detect architecture
@@ -131,6 +152,12 @@ build_download_url() {
 
 # Check if running with sudo when needed
 check_permissions() {
+    # Termux doesn't need sudo
+    if [[ "$IS_TERMUX" == "true" ]]; then
+        SUDO=""
+        return
+    fi
+
     if [[ ! -w "$INSTALL_DIR" ]]; then
         if [[ $EUID -ne 0 ]]; then
             warn "Installation directory $INSTALL_DIR requires root permissions"
@@ -143,7 +170,9 @@ check_permissions() {
 
 # Download and install
 install_binary() {
-    local tmp_file="/tmp/k1s-$$"
+    # Use TMPDIR for Termux, /tmp otherwise
+    local tmp_dir="${TMPDIR:-/tmp}"
+    local tmp_file="$tmp_dir/k1s-$$"
 
     info "Downloading k1s $VERSION..."
     if ! curl -sL "$DOWNLOAD_URL" -o "$tmp_file"; then
@@ -210,8 +239,8 @@ try_package_manager() {
         fi
     fi
 
-    # Linux - Check for apt/dnf/yum
-    if [[ "$OS" == "linux" ]]; then
+    # Linux - Check for apt/dnf/yum (skip for Termux)
+    if [[ "$OS" == "linux" ]] && [[ "$IS_TERMUX" != "true" ]]; then
         if command -v apt &> /dev/null; then
             info "Debian/Ubuntu detected. .deb package available:"
             echo "  curl -LO https://github.com/$GITHUB_REPO/releases/download/$VERSION/k1s_${VERSION#v}_${ARCH}.deb"
@@ -223,6 +252,13 @@ try_package_manager() {
             echo "  sudo dnf install ./k1s-${VERSION#v}-1.${ARCH}.rpm"
             echo ""
         fi
+    fi
+
+    # Termux info
+    if [[ "$IS_TERMUX" == "true" ]]; then
+        info "Installing k1s for Termux (Android)"
+        info "Make sure you have kubectl configured for your cluster"
+        echo ""
     fi
 }
 
