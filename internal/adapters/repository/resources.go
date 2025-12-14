@@ -862,6 +862,53 @@ func CopySecretToNamespace(ctx context.Context, clientset *kubernetes.Clientset,
 	return nil
 }
 
+// CopyConfigMapToNamespace copies a ConfigMap from source namespace to target namespace.
+// If the ConfigMap already exists in the target namespace, it will be updated.
+func CopyConfigMapToNamespace(ctx context.Context, clientset *kubernetes.Clientset, sourceNamespace, configMapName, targetNamespace string) error {
+	// Get source configmap
+	sourceCM, err := clientset.CoreV1().ConfigMaps(sourceNamespace).Get(ctx, configMapName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get source configmap: %w", err)
+	}
+
+	// Create new configmap for target namespace
+	newCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        sourceCM.Name,
+			Namespace:   targetNamespace,
+			Labels:      sourceCM.Labels,
+			Annotations: sourceCM.Annotations,
+		},
+		Data:       sourceCM.Data,
+		BinaryData: sourceCM.BinaryData,
+	}
+
+	// Remove resource version and UID (they are namespace-specific)
+	newCM.ResourceVersion = ""
+	newCM.UID = ""
+
+	// Try to create, if exists update
+	_, err = clientset.CoreV1().ConfigMaps(targetNamespace).Create(ctx, newCM, metav1.CreateOptions{})
+	if err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			// Update existing configmap
+			existing, getErr := clientset.CoreV1().ConfigMaps(targetNamespace).Get(ctx, configMapName, metav1.GetOptions{})
+			if getErr != nil {
+				return fmt.Errorf("failed to get existing configmap: %w", getErr)
+			}
+			newCM.ResourceVersion = existing.ResourceVersion
+			_, err = clientset.CoreV1().ConfigMaps(targetNamespace).Update(ctx, newCM, metav1.UpdateOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to update configmap: %w", err)
+			}
+		} else {
+			return fmt.Errorf("failed to create configmap: %w", err)
+		}
+	}
+
+	return nil
+}
+
 func podToPodInfo(p *corev1.Pod) PodInfo {
 	var restarts int32
 	var containers []ContainerInfo

@@ -291,6 +291,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.configMapViewer.SetSize(m.width, m.height)
+		m.configMapViewer.SetNamespaces(m.navigator.GetNamespaces())
 		m.configMapViewer.Show(msg.data, m.k8sClient.Namespace())
 		return m, nil
 
@@ -360,6 +361,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.statusMsg = statusText
 		m.secretViewer.SetStatusMsg(statusText)
+		// Clear status after showing result
+		return m, clearStatusAfter(3 * time.Second)
+
+	case component.ConfigMapCopyProgress:
+		// Continue copying to next namespace
+		statusText := fmt.Sprintf("Copying to %s... (%d done)", msg.CurrentNamespace, msg.SuccessCount+msg.ErrorCount)
+		m.statusMsg = statusText
+		m.configMapViewer.SetStatusMsg(statusText)
+		return m, m.copyConfigMapToSingleNamespace(msg.SourceNamespace, msg.ConfigMapName, msg.CurrentNamespace, msg.Remaining, msg.SuccessCount, msg.ErrorCount)
+
+	case component.ConfigMapCopyResult:
+		// Show result
+		var statusText string
+		if msg.Success {
+			statusText = msg.Message
+		} else if msg.Err != nil {
+			statusText = "Error: " + msg.Err.Error()
+		} else {
+			statusText = msg.Message
+		}
+		m.statusMsg = statusText
+		m.configMapViewer.SetStatusMsg(statusText)
 		// Clear status after showing result
 		return m, clearStatusAfter(3 * time.Second)
 
@@ -508,6 +531,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clearStatusMsg:
 		m.statusMsg = ""
 		m.secretViewer.SetStatusMsg("")
+		m.configMapViewer.SetStatusMsg("")
 		return m, nil
 
 	case view.ScaleRequestMsg:
@@ -580,6 +604,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// ConfigMap viewer takes priority
 		if m.configMapViewer.IsVisible() {
 			m.configMapViewer, cmd = m.configMapViewer.Update(msg)
+			// Check for pending copy request
+			if req := m.configMapViewer.GetPendingRequest(); req != nil {
+				// Handle the copy request directly
+				if req.AllNamespaces {
+					var namespaces []string
+					for _, ns := range req.Namespaces {
+						if ns != req.SourceNamespace {
+							namespaces = append(namespaces, ns)
+						}
+					}
+					if len(namespaces) == 0 {
+						statusText := "No other namespaces to copy to"
+						m.statusMsg = statusText
+						m.configMapViewer.SetStatusMsg(statusText)
+						return m, clearStatusAfter(3 * time.Second)
+					}
+					first := namespaces[0]
+					remaining := namespaces[1:]
+					statusText := fmt.Sprintf("Copying to %s...", first)
+					m.statusMsg = statusText
+					m.configMapViewer.SetStatusMsg(statusText)
+					return m, m.copyConfigMapToSingleNamespace(req.SourceNamespace, req.ConfigMapName, first, remaining, 0, 0)
+				}
+				statusText := fmt.Sprintf("Copying to %s...", req.TargetNamespace)
+				m.statusMsg = statusText
+				m.configMapViewer.SetStatusMsg(statusText)
+				return m, m.copyConfigMapToSingleNamespace(req.SourceNamespace, req.ConfigMapName, req.TargetNamespace, nil, 0, 0)
+			}
 			return m, cmd
 		}
 
@@ -1573,6 +1625,55 @@ func (m *Model) copySecretToSingleNamespace(sourceNs, secretName, targetNs strin
 		newRemaining := remaining[1:]
 		return component.SecretCopyProgress{
 			SecretName:       secretName,
+			SourceNamespace:  sourceNs,
+			CurrentNamespace: next,
+			Remaining:        newRemaining,
+			SuccessCount:     successCount,
+			ErrorCount:       errorCount,
+		}
+	}
+}
+
+func (m *Model) copyConfigMapToSingleNamespace(sourceNs, configMapName, targetNs string, remaining []string, successCount, errorCount int) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+
+		// Small delay so user can see the namespace name
+		time.Sleep(300 * time.Millisecond)
+
+		// Copy to current namespace
+		err := repository.CopyConfigMapToNamespace(ctx, m.k8sClient.Clientset(), sourceNs, configMapName, targetNs)
+		if err != nil {
+			errorCount++
+		} else {
+			successCount++
+		}
+
+		// If no more remaining, return final result
+		if len(remaining) == 0 {
+			if errorCount > 0 {
+				return component.ConfigMapCopyResult{
+					Success: false,
+					Message: fmt.Sprintf("Copied to %d namespaces, %d failed", successCount, errorCount),
+				}
+			}
+			if successCount == 1 {
+				return component.ConfigMapCopyResult{
+					Success: true,
+					Message: fmt.Sprintf("Copied to %s", targetNs),
+				}
+			}
+			return component.ConfigMapCopyResult{
+				Success: true,
+				Message: fmt.Sprintf("Copied to %d namespaces", successCount),
+			}
+		}
+
+		// Send progress for next namespace
+		next := remaining[0]
+		newRemaining := remaining[1:]
+		return component.ConfigMapCopyProgress{
+			ConfigMapName:    configMapName,
 			SourceNamespace:  sourceNs,
 			CurrentNamespace: next,
 			Remaining:        newRemaining,
