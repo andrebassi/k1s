@@ -56,6 +56,9 @@ func NewClient() (*Client, error) {
 
 	config.Timeout = 30 * time.Second
 
+	// Suppress API deprecation warnings from being printed to stderr
+	config.WarningHandler = rest.NoWarnings{}
+
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
