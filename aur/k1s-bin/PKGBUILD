@@ -1,0 +1,47 @@
+# Maintainer: Andre Bassi <andrebassi@github.com>
+pkgname=k1s-bin
+pkgver=0.1.1
+pkgrel=1
+pkgdesc="Kubernetes TUI Debugger - One screen to see why your pod is broken"
+arch=('x86_64' 'aarch64' 'armv7h')
+url="https://github.com/andrebassi/k1s"
+license=('MIT')
+depends=('kubectl')
+optdepends=('metrics-server: for CPU/Memory metrics')
+provides=('k1s')
+conflicts=('k1s')
+source_x86_64=("${pkgname}-${pkgver}-x86_64::https://github.com/andrebassi/k1s/releases/download/v${pkgver}/k1s-linux-amd64")
+source_aarch64=("${pkgname}-${pkgver}-aarch64::https://github.com/andrebassi/k1s/releases/download/v${pkgver}/k1s-linux-arm64")
+source_armv7h=("${pkgname}-${pkgver}-armv7h::https://github.com/andrebassi/k1s/releases/download/v${pkgver}/k1s-linux-armv7")
+sha256sums_x86_64=('4d16526f6044db12f47bdd467cfa4a29f5b6f8d3674f3e46ffb2f1428c1329df')
+sha256sums_aarch64=('e638eb90ddcc6a7f5b9ee48594a93a5452b1cc897314519f8c6b56515a7a8cad')
+sha256sums_armv7h=('e0121ff73c417fa0c401f81a28912eac9f7e3b49d5c967ad9c813238c6aa352a')
+
+package() {
+    install -Dm755 "${srcdir}/${pkgname}-${pkgver}-${CARCH}" "${pkgdir}/usr/bin/k1s"
+
+    # Install license
+    install -Dm644 /dev/stdin "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE" << 'EOF'
+MIT License
+
+Copyright (c) 2024 Andre Bassi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+EOF
+}

@@ -1,0 +1,21 @@
+pkgbase = k1s-bin
+	pkgdesc = Kubernetes TUI Debugger - One screen to see why your pod is broken
+	pkgver = 0.1.1
+	pkgrel = 1
+	url = https://github.com/andrebassi/k1s
+	arch = x86_64
+	arch = aarch64
+	arch = armv7h
+	license = MIT
+	depends = kubectl
+	optdepends = metrics-server: for CPU/Memory metrics
+	provides = k1s
+	conflicts = k1s
+	source_x86_64 = k1s-bin-0.1.1-x86_64::https://github.com/andrebassi/k1s/releases/download/v0.1.1/k1s-linux-amd64
+	sha256sums_x86_64 = 4d16526f6044db12f47bdd467cfa4a29f5b6f8d3674f3e46ffb2f1428c1329df
+	source_aarch64 = k1s-bin-0.1.1-aarch64::https://github.com/andrebassi/k1s/releases/download/v0.1.1/k1s-linux-arm64
+	sha256sums_aarch64 = e638eb90ddcc6a7f5b9ee48594a93a5452b1cc897314519f8c6b56515a7a8cad
+	source_armv7h = k1s-bin-0.1.1-armv7h::https://github.com/andrebassi/k1s/releases/download/v0.1.1/k1s-linux-armv7
+	sha256sums_armv7h = e0121ff73c417fa0c401f81a28912eac9f7e3b49d5c967ad9c813238c6aa352a
+
+pkgname = k1s-bin

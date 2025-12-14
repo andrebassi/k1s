@@ -83,6 +83,25 @@ brew tap andrebassi/k1s
 brew install k1s
 ```
 
+### Via Scoop (Windows)
+
+```powershell
+scoop bucket add k1s https://github.com/andrebassi/scoop-k1s
+scoop install k1s
+```
+
+### Via AUR (Arch Linux)
+
+```bash
+# Using yay
+yay -S k1s-bin
+
+# Using paru
+paru -S k1s-bin
+```
+
+> **Note:** AUR submission pending. See [aur/k1s-bin](aur/k1s-bin/PKGBUILD) for the PKGBUILD.
+
 ### Via MacPorts (macOS)
 
 ```bash

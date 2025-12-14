@@ -121,23 +121,26 @@ jobs:
 
             ### Installation
 
-            **macOS (Homebrew):**
+            **macOS/Linux (Homebrew):**
             ```bash
             brew tap andrebassi/k1s
             brew install k1s
             ```
 
-            **Manual (Linux/macOS):**
-            ```bash
-            # Download (Linux amd64)
-            curl -L -o k1s https://github.com/andrebassi/k1s/releases/download/${{ github.ref_name }}/k1s-linux-amd64
-            chmod +x k1s
-            sudo mv k1s /usr/local/bin/
+            **Windows (Scoop):**
+            ```powershell
+            scoop bucket add k1s https://github.com/andrebassi/scoop-k1s
+            scoop install k1s
             ```
 
-            **macOS Apple Silicon:**
+            **Arch Linux (AUR):**
             ```bash
-            curl -L -o k1s https://github.com/andrebassi/k1s/releases/download/${{ github.ref_name }}/k1s-darwin-arm64
+            yay -S k1s-bin
+            ```
+
+            **Manual (Linux/macOS):**
+            ```bash
+            curl -L -o k1s https://github.com/andrebassi/k1s/releases/download/${{ github.ref_name }}/k1s-linux-amd64
             chmod +x k1s
             sudo mv k1s /usr/local/bin/
             ```
@@ -223,5 +226,68 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/k1s.rb
+          git commit -m "Update k1s to ${{ github.ref_name }}" || echo "No changes to commit"
+          git push
+
+  scoop:
+    name: Update Scoop Bucket
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout scoop bucket
+        uses: actions/checkout@v4
+        with:
+          repository: andrebassi/scoop-k1s
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: scoop-k1s
+
+      - name: Get version
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Download checksums
+        run: |
+          curl -L -o checksums.txt https://github.com/andrebassi/k1s/releases/download/${{ github.ref_name }}/checksums.txt
+          cat checksums.txt
+
+      - name: Get SHA256 sum
+        id: sha
+        run: |
+          echo "WINDOWS_AMD64=$(grep windows-amd64 checksums.txt | awk '{print $1}')" >> $GITHUB_OUTPUT
+
+      - name: Update Scoop manifest
+        run: |
+          cat > scoop-k1s/bucket/k1s.json << EOF
+          {
+              "version": "${{ steps.version.outputs.VERSION }}",
+              "description": "Kubernetes TUI Debugger - One screen to see why your pod is broken",
+              "homepage": "https://github.com/andrebassi/k1s",
+              "license": "MIT",
+              "architecture": {
+                  "64bit": {
+                      "url": "https://github.com/andrebassi/k1s/releases/download/${{ github.ref_name }}/k1s-windows-amd64.exe#/k1s.exe",
+                      "hash": "${{ steps.sha.outputs.WINDOWS_AMD64 }}"
+                  }
+              },
+              "bin": "k1s.exe",
+              "checkver": {
+                  "github": "https://github.com/andrebassi/k1s"
+              },
+              "autoupdate": {
+                  "architecture": {
+                      "64bit": {
+                          "url": "https://github.com/andrebassi/k1s/releases/download/v\$version/k1s-windows-amd64.exe#/k1s.exe"
+                      }
+                  }
+              }
+          }
+          EOF
+
+      - name: Commit and push
+        run: |
+          cd scoop-k1s
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add bucket/k1s.json
           git commit -m "Update k1s to ${{ github.ref_name }}" || echo "No changes to commit"
           git push

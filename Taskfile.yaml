@@ -269,3 +269,89 @@ tasks:
         fi
         echo ""
         echo "=== All tests complete ==="
+
+  # ============================================
+  # Scoop (Windows) Tasks
+  # ============================================
+
+  scoop:update:
+    desc: Update Scoop manifest with new version checksums
+    vars:
+      TAG:
+        sh: git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.1"
+      VERSION:
+        sh: git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.1.1"
+    cmds:
+      - |
+        echo "Fetching checksums for {{.TAG}}..."
+        CHECKSUM=$(curl -sL "https://github.com/andrebassi/k1s/releases/download/{{.TAG}}/checksums.txt" | grep windows-amd64 | awk '{print $1}')
+        echo ""
+        echo "=== Scoop manifest for {{.TAG}} ==="
+        echo '"version": "{{.VERSION}}"'
+        echo '"hash": "'$CHECKSUM'"'
+        echo ""
+        echo "Update scoop-k1s/bucket/k1s.json with these values"
+
+  # ============================================
+  # AUR (Arch Linux) Tasks
+  # ============================================
+
+  aur:update:
+    desc: Update AUR PKGBUILD with new version checksums
+    vars:
+      TAG:
+        sh: git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.1"
+      VERSION:
+        sh: git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.1.1"
+    cmds:
+      - |
+        echo "Fetching checksums for {{.TAG}}..."
+        curl -sL "https://github.com/andrebassi/k1s/releases/download/{{.TAG}}/checksums.txt"
+        echo ""
+        echo "=== AUR PKGBUILD values for {{.TAG}} ==="
+        echo "pkgver={{.VERSION}}"
+        echo ""
+        LINUX_AMD64=$(curl -sL "https://github.com/andrebassi/k1s/releases/download/{{.TAG}}/checksums.txt" | grep linux-amd64 | awk '{print $1}')
+        LINUX_ARM64=$(curl -sL "https://github.com/andrebassi/k1s/releases/download/{{.TAG}}/checksums.txt" | grep linux-arm64 | awk '{print $1}')
+        LINUX_ARMV7=$(curl -sL "https://github.com/andrebassi/k1s/releases/download/{{.TAG}}/checksums.txt" | grep linux-armv7 | awk '{print $1}')
+        echo "sha256sums_x86_64=('$LINUX_AMD64')"
+        echo "sha256sums_aarch64=('$LINUX_ARM64')"
+        echo "sha256sums_armv7h=('$LINUX_ARMV7')"
+        echo ""
+        echo "Update aur/k1s-bin/PKGBUILD with these values"
+
+  aur:submit:
+    desc: Instructions for submitting to AUR
+    cmds:
+      - |
+        echo ""
+        echo "=== AUR Submission Guide ==="
+        echo ""
+        echo "1. Create an AUR account at:"
+        echo "   https://aur.archlinux.org/register"
+        echo ""
+        echo "2. Set up SSH key for AUR:"
+        echo "   ssh-keygen -t ed25519 -C 'aur'"
+        echo "   Add public key to AUR account settings"
+        echo ""
+        echo "3. Clone the AUR package (first time):"
+        echo "   git clone ssh://aur@aur.archlinux.org/k1s-bin.git"
+        echo "   cd k1s-bin"
+        echo ""
+        echo "4. Copy PKGBUILD and .SRCINFO:"
+        echo "   cp /path/to/k1s/aur/k1s-bin/PKGBUILD ."
+        echo "   cp /path/to/k1s/aur/k1s-bin/.SRCINFO ."
+        echo ""
+        echo "5. Test the package (on Arch Linux):"
+        echo "   makepkg -si"
+        echo ""
+        echo "6. Generate .SRCINFO:"
+        echo "   makepkg --printsrcinfo > .SRCINFO"
+        echo ""
+        echo "7. Commit and push:"
+        echo "   git add PKGBUILD .SRCINFO"
+        echo "   git commit -m 'Update to version X.Y.Z'"
+        echo "   git push"
+        echo ""
+        echo "Reference: https://wiki.archlinux.org/title/AUR_submission_guidelines"
+        echo ""
