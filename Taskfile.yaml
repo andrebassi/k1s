@@ -133,3 +133,139 @@ tasks:
         echo ""
         echo "Reference: https://guide.macports.org/chunked/project.contributing.html"
         echo ""
+
+  # ============================================
+  # Installation Tests
+  # ============================================
+
+  test:brew:install:
+    desc: Install k1s via Homebrew
+    cmds:
+      - brew tap andrebassi/k1s
+      - brew install k1s
+      - echo "✅ Homebrew installation complete"
+
+  test:brew:upgrade:
+    desc: Upgrade k1s via Homebrew
+    cmds:
+      - brew upgrade k1s || echo "Already at latest version"
+
+  test:brew:uninstall:
+    desc: Uninstall k1s via Homebrew
+    cmds:
+      - brew uninstall k1s
+      - brew untap andrebassi/k1s
+      - echo "✅ Homebrew uninstall complete"
+
+  test:brew:verify:
+    desc: Verify k1s Homebrew installation
+    cmds:
+      - |
+        echo "=== Homebrew k1s Verification ==="
+        echo ""
+        echo "📍 Binary location:"
+        which k1s
+        echo ""
+        echo "📦 Version:"
+        k1s --version
+        echo ""
+        echo "❓ Help:"
+        k1s --help | head -20
+        echo "..."
+        echo ""
+        echo "✅ Homebrew verification complete"
+
+  test:brew:
+    desc: Full Homebrew test (install, verify, uninstall)
+    cmds:
+      - task: test:brew:install
+      - task: test:brew:verify
+      - echo ""
+      - echo "Run 'task test:brew:uninstall' to remove"
+
+  test:macports:install:
+    desc: Install k1s via MacPorts (requires MacPorts)
+    cmds:
+      - |
+        if ! command -v port &> /dev/null; then
+          echo "❌ MacPorts not installed"
+          echo "Install from: https://www.macports.org/install.php"
+          exit 1
+        fi
+        sudo port install k1s
+        echo "✅ MacPorts installation complete"
+
+  test:macports:uninstall:
+    desc: Uninstall k1s via MacPorts
+    cmds:
+      - |
+        if ! command -v port &> /dev/null; then
+          echo "❌ MacPorts not installed"
+          exit 1
+        fi
+        sudo port uninstall k1s
+        echo "✅ MacPorts uninstall complete"
+
+  test:macports:verify:
+    desc: Verify k1s MacPorts installation
+    cmds:
+      - |
+        if ! command -v port &> /dev/null; then
+          echo "❌ MacPorts not installed"
+          exit 1
+        fi
+        echo "=== MacPorts k1s Verification ==="
+        echo ""
+        echo "📍 Binary location:"
+        which k1s
+        echo ""
+        echo "📦 Version:"
+        k1s --version
+        echo ""
+        echo "❓ Help:"
+        k1s --help | head -20
+        echo "..."
+        echo ""
+        echo "✅ MacPorts verification complete"
+
+  test:macports:local:
+    desc: Test Portfile locally (build from source)
+    cmds:
+      - |
+        if ! command -v port &> /dev/null; then
+          echo "❌ MacPorts not installed"
+          echo "Install from: https://www.macports.org/install.php"
+          exit 1
+        fi
+        echo "Testing local Portfile..."
+        cd {{.ROOT_DIR}}
+        sudo port -v test ports/sysutils/k1s
+        echo "✅ Local Portfile test complete"
+
+  test:macports:
+    desc: Full MacPorts test (requires MacPorts installed)
+    cmds:
+      - task: test:macports:install
+      - task: test:macports:verify
+      - echo ""
+      - echo "Run 'task test:macports:uninstall' to remove"
+
+  test:all:
+    desc: Test all installation methods
+    cmds:
+      - |
+        echo "=== Testing All Installation Methods ==="
+        echo ""
+        echo "1. Testing Homebrew..."
+        task test:brew:install
+        task test:brew:verify
+        echo ""
+        echo "2. Checking MacPorts..."
+        if command -v port &> /dev/null; then
+          task test:macports:install
+          task test:macports:verify
+        else
+          echo "⚠️  MacPorts not installed, skipping"
+        fi
+        echo ""
+        echo "=== All tests complete ==="
