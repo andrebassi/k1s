@@ -187,21 +187,29 @@ verify_installation() {
     fi
 }
 
-# Check for package managers
+# Check for package managers (informational only in non-interactive mode)
 try_package_manager() {
+    # Check if running interactively
+    local interactive=false
+    if [[ -t 0 ]]; then
+        interactive=true
+    fi
+
     # macOS - Homebrew
     if [[ "$OS" == "darwin" ]] && command -v brew &> /dev/null; then
         info "Homebrew detected. You can also install via:"
         echo "  brew tap andrebassi/k1s && brew install k1s"
         echo ""
-        read -p "Install via Homebrew instead? [y/N] " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            brew tap andrebassi/k1s
-            brew install k1s
-            success "Installed via Homebrew!"
-            k1s --version
-            exit 0
+        if [[ "$interactive" == "true" ]]; then
+            read -p "Install via Homebrew instead? [y/N] " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                brew tap andrebassi/k1s
+                brew install k1s
+                success "Installed via Homebrew!"
+                k1s --version
+                exit 0
+            fi
         fi
     fi
 
