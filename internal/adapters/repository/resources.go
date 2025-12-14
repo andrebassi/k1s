@@ -406,6 +406,86 @@ func listPodsAsWorkloads(ctx context.Context, clientset *kubernetes.Clientset, n
 	return workloads, nil
 }
 
+// ResourceRollouts is the resource type for Argo Rollouts.
+const ResourceRollouts ResourceType = "rollouts"
+
+// ListRollouts returns all Argo Rollouts in a namespace using the dynamic client.
+func ListRollouts(ctx context.Context, dynamicClient dynamic.Interface, namespace string) ([]WorkloadInfo, error) {
+	if dynamicClient == nil {
+		return nil, nil
+	}
+
+	rolloutGVR := schema.GroupVersionResource{
+		Group:    "argoproj.io",
+		Version:  "v1alpha1",
+		Resource: "rollouts",
+	}
+
+	rollouts, err := dynamicClient.Resource(rolloutGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, nil // Ignore error if Rollouts CRD not installed
+	}
+
+	var workloads []WorkloadInfo
+	for _, r := range rollouts.Items {
+		name := r.GetName()
+		ns := r.GetNamespace()
+		labels := r.GetLabels()
+
+		var replicas int32 = 1
+		var readyReplicas int32 = 0
+		status := "Unknown"
+
+		if spec, ok := r.Object["spec"].(map[string]interface{}); ok {
+			if rep, ok := spec["replicas"].(int64); ok {
+				replicas = int32(rep)
+			} else if rep, ok := spec["replicas"].(float64); ok {
+				replicas = int32(rep)
+			}
+		}
+
+		if statusObj, ok := r.Object["status"].(map[string]interface{}); ok {
+			if ready, ok := statusObj["readyReplicas"].(int64); ok {
+				readyReplicas = int32(ready)
+			} else if ready, ok := statusObj["readyReplicas"].(float64); ok {
+				readyReplicas = int32(ready)
+			}
+			if phase, ok := statusObj["phase"].(string); ok {
+				status = phase
+			}
+		}
+
+		// Get selector labels from spec.selector.matchLabels
+		selectorLabels := make(map[string]string)
+		if spec, ok := r.Object["spec"].(map[string]interface{}); ok {
+			if selector, ok := spec["selector"].(map[string]interface{}); ok {
+				if matchLabels, ok := selector["matchLabels"].(map[string]interface{}); ok {
+					for k, v := range matchLabels {
+						if strVal, ok := v.(string); ok {
+							selectorLabels[k] = strVal
+						}
+					}
+				}
+			}
+		}
+		if len(selectorLabels) == 0 {
+			selectorLabels = labels
+		}
+
+		workloads = append(workloads, WorkloadInfo{
+			Name:      name,
+			Namespace: ns,
+			Type:      ResourceRollouts,
+			Ready:     fmt.Sprintf("%d/%d", readyReplicas, replicas),
+			Replicas:  replicas,
+			Age:       formatAge(r.GetCreationTimestamp().Time),
+			Status:    status,
+			Labels:    selectorLabels,
+		})
+	}
+	return workloads, nil
+}
+
 // GetWorkloadPods returns all pods belonging to a workload.
 // Uses label selectors to find pods managed by the workload.
 func GetWorkloadPods(ctx context.Context, clientset *kubernetes.Clientset, workload WorkloadInfo) ([]PodInfo, error) {
@@ -1064,10 +1144,12 @@ type VirtualServiceRoute struct {
 }
 
 type OwnerInfo struct {
-	Kind         string
-	Name         string
-	WorkloadKind string // Parent of ReplicaSet (Deployment, etc)
-	WorkloadName string
+	Kind          string
+	Name          string
+	WorkloadKind  string // Parent of ReplicaSet (Deployment, etc)
+	WorkloadName  string
+	Replicas      int32  // Desired replicas
+	ReadyReplicas int32  // Ready replicas
 }
 
 // GetRelatedResources discovers resources related to a pod.
@@ -1088,6 +1170,58 @@ func GetRelatedResources(ctx context.Context, clientset *kubernetes.Clientset, d
 			if err == nil && len(rs.OwnerReferences) > 0 {
 				related.Owner.WorkloadKind = rs.OwnerReferences[0].Kind
 				related.Owner.WorkloadName = rs.OwnerReferences[0].Name
+
+				// Fetch replica count from the workload
+				switch related.Owner.WorkloadKind {
+				case "Deployment":
+					dep, err := clientset.AppsV1().Deployments(pod.Namespace).Get(ctx, related.Owner.WorkloadName, metav1.GetOptions{})
+					if err == nil {
+						related.Owner.Replicas = *dep.Spec.Replicas
+						related.Owner.ReadyReplicas = dep.Status.ReadyReplicas
+					}
+				case "StatefulSet":
+					sts, err := clientset.AppsV1().StatefulSets(pod.Namespace).Get(ctx, related.Owner.WorkloadName, metav1.GetOptions{})
+					if err == nil {
+						related.Owner.Replicas = *sts.Spec.Replicas
+						related.Owner.ReadyReplicas = sts.Status.ReadyReplicas
+					}
+				case "Rollout":
+					// Argo Rollout - use dynamic client
+					if dynamicClient != nil {
+						rolloutGVR := schema.GroupVersionResource{
+							Group:    "argoproj.io",
+							Version:  "v1alpha1",
+							Resource: "rollouts",
+						}
+						rollout, err := dynamicClient.Resource(rolloutGVR).Namespace(pod.Namespace).Get(ctx, related.Owner.WorkloadName, metav1.GetOptions{})
+						if err == nil {
+							// Default replicas is 1 if not specified
+							related.Owner.Replicas = 1
+							if spec, ok := rollout.Object["spec"].(map[string]interface{}); ok {
+								if replicas, ok := spec["replicas"].(int64); ok {
+									related.Owner.Replicas = int32(replicas)
+								} else if replicas, ok := spec["replicas"].(float64); ok {
+									related.Owner.Replicas = int32(replicas)
+								}
+							}
+							if status, ok := rollout.Object["status"].(map[string]interface{}); ok {
+								if readyReplicas, ok := status["readyReplicas"].(int64); ok {
+									related.Owner.ReadyReplicas = int32(readyReplicas)
+								} else if readyReplicas, ok := status["readyReplicas"].(float64); ok {
+									related.Owner.ReadyReplicas = int32(readyReplicas)
+								}
+								// Also try availableReplicas as fallback
+								if related.Owner.ReadyReplicas == 0 {
+									if availableReplicas, ok := status["availableReplicas"].(int64); ok {
+										related.Owner.ReadyReplicas = int32(availableReplicas)
+									} else if availableReplicas, ok := status["availableReplicas"].(float64); ok {
+										related.Owner.ReadyReplicas = int32(availableReplicas)
+									}
+								}
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -1507,6 +1641,40 @@ func ScaleStatefulSet(ctx context.Context, clientset *kubernetes.Clientset, name
 	scale.Spec.Replicas = replicas
 	_, err = clientset.AppsV1().StatefulSets(namespace).UpdateScale(ctx, name, scale, metav1.UpdateOptions{})
 	return err
+}
+
+// ScaleRollout scales an Argo Rollout to the specified replica count using the dynamic client.
+func ScaleRollout(ctx context.Context, dynamicClient dynamic.Interface, namespace, name string, replicas int32) error {
+	if dynamicClient == nil {
+		return fmt.Errorf("dynamic client not available")
+	}
+
+	rolloutGVR := schema.GroupVersionResource{
+		Group:    "argoproj.io",
+		Version:  "v1alpha1",
+		Resource: "rollouts",
+	}
+
+	// Patch the rollout's spec.replicas field
+	patch := fmt.Sprintf(`{"spec":{"replicas":%d}}`, replicas)
+	_, err := dynamicClient.Resource(rolloutGVR).Namespace(namespace).Patch(
+		ctx, name, "application/merge-patch+json", []byte(patch), metav1.PatchOptions{},
+	)
+	return err
+}
+
+// getScaleResourceType converts a ResourceType to kubectl scale-compatible resource name
+func getScaleResourceType(rt ResourceType) string {
+	switch rt {
+	case ResourceDeployments:
+		return "deployment"
+	case ResourceStatefulSets:
+		return "statefulset"
+	case ResourceRollouts:
+		return "rollout"
+	default:
+		return string(rt)
+	}
 }
 
 func RestartDeployment(ctx context.Context, clientset *kubernetes.Clientset, namespace, name string) error {

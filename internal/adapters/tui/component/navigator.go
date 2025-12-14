@@ -55,6 +55,8 @@ type Navigator struct {
 	resourceType repository.ResourceType
 	keys         keys.KeyMap
 	panelActive  bool           // Whether this panel is active (for namespace mode with nodes)
+	// Workload info for scale controls
+	scaleWorkload *repository.WorkloadInfo
 }
 
 func NewNavigator() Navigator {
@@ -461,7 +463,30 @@ func (n Navigator) renderSectionHeader(title string, count int, active bool) str
 func (n Navigator) renderPodsTable(maxRows int, active bool) string {
 	pods := n.filteredPods()
 	if len(pods) == 0 {
-		return style.StatusMuted.Render("  No pods found")
+		var b strings.Builder
+		b.WriteString(style.StatusMuted.Render("  No pods found\n"))
+		// Show scale controls if workload info available
+		if n.HasWorkload() {
+			// Convert workload type to pretty format for display
+			kindDisplay := string(n.scaleWorkload.Type)
+			switch n.scaleWorkload.Type {
+			case repository.ResourceDeployments:
+				kindDisplay = "Deployment"
+			case repository.ResourceStatefulSets:
+				kindDisplay = "StatefulSet"
+			case repository.ResourceDaemonSets:
+				kindDisplay = "DaemonSet"
+			case repository.ResourceRollouts:
+				kindDisplay = "Rollout"
+			}
+			workloadValue := fmt.Sprintf("%s/%s", kindDisplay, n.scaleWorkload.Name)
+			b.WriteString(fmt.Sprintf("\n  %-12s %s\n", "Workload:", style.StatusRunning.Render(workloadValue)))
+			// Show 0 replicas since there are no pods running
+			scaleHint := style.StatusMuted.Render(" 🔼 🔽")
+			b.WriteString(fmt.Sprintf("  %-12s %s%s\n\n", "Replicas:", style.StatusRunning.Render("0"), scaleHint))
+			b.WriteString(style.StatusMuted.Render("  Press s to scale up · d to scale down"))
+		}
+		return b.String()
 	}
 
 	var b strings.Builder
@@ -1050,4 +1075,19 @@ func (n *Navigator) CloseSearch() {
 
 func (n Navigator) Render(width int) string {
 	return lipgloss.NewStyle().Width(width).Render(n.View())
+}
+
+// SetScaleWorkload stores workload info for scale controls
+func (n *Navigator) SetScaleWorkload(workload *repository.WorkloadInfo) {
+	n.scaleWorkload = workload
+}
+
+// HasWorkload returns true if workload info is available
+func (n Navigator) HasWorkload() bool {
+	return n.scaleWorkload != nil && n.scaleWorkload.Name != ""
+}
+
+// GetScaleWorkload returns the workload for scaling
+func (n Navigator) GetScaleWorkload() *repository.WorkloadInfo {
+	return n.scaleWorkload
 }

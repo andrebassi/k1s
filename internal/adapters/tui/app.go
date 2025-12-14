@@ -83,6 +83,7 @@ type resourcesLoadedMsg struct {
 	pods       []repository.PodInfo
 	configmaps []repository.ConfigMapInfo
 	secrets    []repository.SecretInfo
+	workload   *repository.WorkloadInfo // First scalable workload for scale controls
 	err        error
 }
 
@@ -117,6 +118,8 @@ type workloadActionMsg struct {
 }
 
 type tickMsg time.Time
+
+type clearStatusMsg struct{}
 
 type configMapDataMsg struct {
 	data *repository.ConfigMapData
@@ -224,8 +227,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.navigator.SetSize(msg.Width, msg.Height-2)
-		m.dashboard.SetSize(msg.Width, msg.Height-2)
+		m.navigator.SetSize(msg.Width, msg.Height-3) // -2 for border, -1 for status bar
+		m.dashboard.SetSize(msg.Width, msg.Height-3) // -2 for border, -1 for status bar
 		m.help.SetSize(msg.Width, msg.Height)
 		return m, nil
 
@@ -258,6 +261,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.navigator.SetConfigMaps(msg.configmaps)
 		m.navigator.SetSecrets(msg.secrets)
 		m.navigator.SetMode(component.ModeResources)
+		// Pass workload info for scale controls when no pods
+		// Use msg.workload (from namespace load) or m.workload (from workload selection)
+		workload := msg.workload
+		if workload == nil {
+			workload = m.workload
+		}
+		m.navigator.SetScaleWorkload(workload)
 		return m, nil
 
 	case initialResourcesLoadedMsg:
@@ -328,6 +338,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dashboard.SetRelated(msg.related)
 		m.dashboard.SetHelpers(msg.helpers)
 		m.dashboard.SetNode(msg.node)
+		// Pass workload info to navigator for scale controls when no pods
+		if msg.related != nil && msg.related.Owner != nil && msg.related.Owner.WorkloadKind != "" {
+			// Convert Owner info to WorkloadInfo for Navigator
+			var resourceType repository.ResourceType
+			switch msg.related.Owner.WorkloadKind {
+			case "Deployment":
+				resourceType = repository.ResourceDeployments
+			case "StatefulSet":
+				resourceType = repository.ResourceStatefulSets
+			case "DaemonSet":
+				resourceType = repository.ResourceDaemonSets
+			case "Rollout":
+				resourceType = repository.ResourceRollouts
+			}
+			m.navigator.SetScaleWorkload(&repository.WorkloadInfo{
+				Name:      msg.related.Owner.WorkloadName,
+				Namespace: m.k8sClient.Namespace(),
+				Type:      resourceType,
+				Replicas:  msg.related.Owner.Replicas,
+			})
+		}
 		return m, nil
 
 	case logsUpdatedMsg:
@@ -407,17 +438,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		if msg.err != nil {
 			m.statusMsg = "Error: " + msg.err.Error()
-		} else {
-			switch msg.action {
-			case "scale":
-				m.statusMsg = fmt.Sprintf("Scaled %s to %d replicas", msg.workloadName, msg.replicas)
-			case "restart":
-				m.statusMsg = fmt.Sprintf("Restart initiated for %s", msg.workloadName)
-			}
-			// Refresh workloads list
-			return m, m.loadWorkloads()
+			return m, clearStatusAfter(5 * time.Second)
 		}
+		switch msg.action {
+		case "scale":
+			m.statusMsg = fmt.Sprintf("Scaled %s to %d replicas", msg.workloadName, msg.replicas)
+		case "restart":
+			m.statusMsg = fmt.Sprintf("Restart initiated for %s", msg.workloadName)
+		}
+		// Refresh based on current view
+		if m.view == ViewNavigator && m.navigator.Mode() == component.ModeResources {
+			// Stay on resources view and reload
+			return m, tea.Batch(m.loadAllResources(), clearStatusAfter(3*time.Second))
+		}
+		// Refresh workloads list for other views
+		return m, tea.Batch(m.loadWorkloads(), clearStatusAfter(3*time.Second))
+
+	case clearStatusMsg:
+		m.statusMsg = ""
 		return m, nil
+
+	case view.ScaleRequestMsg:
+		// Handle scale request from dashboard
+		var resourceType repository.ResourceType
+		switch msg.WorkloadKind {
+		case "Deployment":
+			resourceType = repository.ResourceDeployments
+		case "StatefulSet":
+			resourceType = repository.ResourceStatefulSets
+		case "DaemonSet":
+			resourceType = repository.ResourceDaemonSets
+		case "Rollout":
+			resourceType = repository.ResourceRollouts
+		}
+		workload := &repository.WorkloadInfo{
+			Name:      msg.WorkloadName,
+			Namespace: msg.Namespace,
+			Type:      resourceType,
+			Replicas:  msg.NewReplicas,
+		}
+		m.statusMsg = fmt.Sprintf("Scaling %s to %d...", msg.WorkloadName, msg.NewReplicas)
+		return m, m.scaleWorkload(workload, msg.NewReplicas)
 
 	case tickMsg:
 		if m.view == ViewDashboard && m.pod != nil {
@@ -676,6 +737,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 				}
+				// Scale up ('s') in resources view when no pods but workload exists
+				if msg.String() == "s" && m.navigator.Mode() == component.ModeResources && m.navigator.HasWorkload() {
+					workload := m.navigator.GetScaleWorkload()
+					if workload != nil {
+						newReplicas := int32(1) // Scale to 1 when no pods
+						m.statusMsg = fmt.Sprintf("Scaling %s to %d...", workload.Name, newReplicas)
+						return m, m.scaleWorkload(workload, newReplicas)
+					}
+				}
+				// Scale down ('d') in resources view when no pods but workload exists
+				if msg.String() == "d" && m.navigator.Mode() == component.ModeResources && m.navigator.HasWorkload() {
+					workload := m.navigator.GetScaleWorkload()
+					if workload != nil && workload.Replicas > 0 {
+						newReplicas := workload.Replicas - 1
+						m.statusMsg = fmt.Sprintf("Scaling %s to %d...", workload.Name, newReplicas)
+						return m, m.scaleWorkload(workload, newReplicas)
+					}
+				}
 			}
 		}
 		m.navigator, cmd = m.navigator.Update(msg)
@@ -811,16 +890,27 @@ func (m Model) View() string {
 		)
 	}
 
+	// Reserve 1 line for status bar
+	boxHeight := contentHeight - 1
+
 	// Create bordered box for content
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(style.Surface).
 		Width(contentWidth).
-		Height(contentHeight)
+		Height(boxHeight)
 
 	boxedContent := boxStyle.Render(content)
 
-	return boxedContent
+	// Status bar at bottom (always reserve space, same width as box)
+	statusStyle := lipgloss.NewStyle().
+		Foreground(style.Warning).
+		Bold(true).
+		Padding(0, 2).
+		Width(contentWidth + 2) // +2 for border
+	statusBar := statusStyle.Render(m.statusMsg)
+
+	return lipgloss.JoinVertical(lipgloss.Left, boxedContent, statusBar)
 }
 
 func (m Model) renderNodesPanel(width, height int) string {
@@ -1161,13 +1251,38 @@ func (m *Model) loadPods(workload *repository.WorkloadInfo) tea.Cmd {
 func (m *Model) loadAllResources() tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		pods, err := repository.ListAllPods(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace())
+		ns := m.k8sClient.Namespace()
+		pods, err := repository.ListAllPods(ctx, m.k8sClient.Clientset(), ns)
 		if err != nil {
 			return resourcesLoadedMsg{err: err}
 		}
-		configmaps, _ := repository.ListConfigMaps(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace())
-		secrets, _ := repository.ListSecrets(ctx, m.k8sClient.Clientset(), m.k8sClient.Namespace())
-		return resourcesLoadedMsg{pods: pods, configmaps: configmaps, secrets: secrets}
+		configmaps, _ := repository.ListConfigMaps(ctx, m.k8sClient.Clientset(), ns)
+		secrets, _ := repository.ListSecrets(ctx, m.k8sClient.Clientset(), ns)
+
+		// Fetch first scalable workload for scale controls when pods = 0
+		var workload *repository.WorkloadInfo
+		if len(pods) == 0 {
+			// Try deployments first
+			deployments, _ := repository.ListWorkloads(ctx, m.k8sClient.Clientset(), ns, repository.ResourceDeployments)
+			if len(deployments) > 0 {
+				workload = &deployments[0]
+			} else {
+				// Try statefulsets
+				statefulsets, _ := repository.ListWorkloads(ctx, m.k8sClient.Clientset(), ns, repository.ResourceStatefulSets)
+				if len(statefulsets) > 0 {
+					workload = &statefulsets[0]
+				}
+			}
+			// Try Argo Rollouts via dynamic client
+			if workload == nil && m.k8sClient.DynamicClient() != nil {
+				rollouts, _ := repository.ListRollouts(ctx, m.k8sClient.DynamicClient(), ns)
+				if len(rollouts) > 0 {
+					workload = &rollouts[0]
+				}
+			}
+		}
+
+		return resourcesLoadedMsg{pods: pods, configmaps: configmaps, secrets: secrets, workload: workload}
 	}
 }
 
@@ -1292,6 +1407,12 @@ func (m *Model) loadLogsForState(pod *repository.PodInfo, container string, prev
 func (m *Model) tickCmd() tea.Cmd {
 	return tea.Tick(time.Duration(m.config.RefreshInterval)*time.Second, func(t time.Time) tea.Msg {
 		return tickMsg(t)
+	})
+}
+
+func clearStatusAfter(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(t time.Time) tea.Msg {
+		return clearStatusMsg{}
 	})
 }
 

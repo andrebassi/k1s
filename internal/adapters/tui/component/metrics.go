@@ -183,7 +183,6 @@ func (m *MetricsPanel) updateContent() {
 		if m.metrics != nil {
 			for _, cm := range m.metrics.Containers {
 				if cm.Name == c.Name {
-					leftCol.WriteString("\n")
 					leftCol.WriteString(fmt.Sprintf("  %-14s %s\n", "CPU Usage:", style.StatusRunning.Render(cm.CPUUsage)))
 					leftCol.WriteString(fmt.Sprintf("  %-14s %s\n", "Mem Usage:", style.StatusRunning.Render(cm.MemoryUsage)))
 					break

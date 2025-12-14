@@ -144,7 +144,7 @@ func (c *Client) DeletePod(ctx context.Context, namespace, name string) error {
 	return DeletePod(ctx, c.clientset, namespace, name)
 }
 
-// ScaleWorkload scales a workload (Deployment or StatefulSet) to the specified replica count.
+// ScaleWorkload scales a workload (Deployment, StatefulSet, or Rollout) to the specified replica count.
 // DaemonSets, Jobs, and CronJobs cannot be scaled and will return nil without error.
 func (c *Client) ScaleWorkload(ctx context.Context, namespace, name string, resourceType ResourceType, replicas int32) error {
 	switch resourceType {
@@ -152,6 +152,8 @@ func (c *Client) ScaleWorkload(ctx context.Context, namespace, name string, reso
 		return ScaleDeployment(ctx, c.clientset, namespace, name, replicas)
 	case ResourceStatefulSets:
 		return ScaleStatefulSet(ctx, c.clientset, namespace, name, replicas)
+	case ResourceRollouts:
+		return ScaleRollout(ctx, c.dynamicClient, namespace, name, replicas)
 	default:
 		return nil // DaemonSets, Jobs, CronJobs cannot be scaled
 	}

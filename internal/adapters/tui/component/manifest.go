@@ -45,17 +45,6 @@ func (m ManifestPanel) Init() tea.Cmd {
 
 func (m ManifestPanel) Update(msg tea.Msg) (ManifestPanel, tea.Cmd) {
 	var cmd tea.Cmd
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "d":
-			m.viewMode = (m.viewMode + 1) % 3
-			m.updateContent()
-			return m, nil
-		}
-	}
-
 	m.viewport, cmd = m.viewport.Update(msg)
 	return m, cmd
 }
@@ -69,7 +58,20 @@ func (m ManifestPanel) View() string {
 	header.WriteString(style.PanelTitleStyle.Render("Pod Details"))
 	header.WriteString("\n")
 
-	return header.String() + m.viewport.View()
+	content := header.String() + m.viewport.View()
+
+	// Add scale hint at bottom right if workload exists
+	if m.related != nil && m.related.Owner != nil && m.related.Owner.WorkloadKind != "" {
+		hint := style.StatusMuted.Render("Press s to scale up · d to scale down")
+		hintLen := 42
+		padding := m.width - hintLen
+		if padding > 0 {
+			// Add extra lines to push hint to bottom
+			content += "\n\n\n" + strings.Repeat(" ", padding) + hint
+		}
+	}
+
+	return content
 }
 
 func (m *ManifestPanel) SetPod(pod *repository.PodInfo) {
@@ -98,6 +100,14 @@ func (m *ManifestPanel) GetWorkload() (kind, name string) {
 // HasWorkload returns true if there's a workload available.
 func (m *ManifestPanel) HasWorkload() bool {
 	return m.related != nil && m.related.Owner != nil && m.related.Owner.WorkloadKind != ""
+}
+
+// GetReplicas returns the current replica count.
+func (m *ManifestPanel) GetReplicas() int32 {
+	if m.related != nil && m.related.Owner != nil {
+		return m.related.Owner.Replicas
+	}
+	return 0
 }
 
 func (m *ManifestPanel) SetSize(width, height int) {
@@ -160,6 +170,24 @@ func (m ManifestPanel) renderPodInfo() string {
 	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf("  %-12s %s\n", "Name:", m.pod.Name))
 	b.WriteString(fmt.Sprintf("  %-12s %s\n", "Namespace:", m.pod.Namespace))
+
+	// Show workload and replicas right after name/namespace for visibility
+	if m.related != nil && m.related.Owner != nil && m.related.Owner.WorkloadKind != "" {
+		workloadValue := fmt.Sprintf("%s/%s", m.related.Owner.WorkloadKind, m.related.Owner.WorkloadName)
+		linkStyle := style.StatusRunning
+		b.WriteString(fmt.Sprintf("  %-12s %s\n", "Workload:", linkStyle.Render(workloadValue+" [w]")))
+		// Show replica count with scale controls
+		replicaStr := fmt.Sprintf("%d/%d", m.related.Owner.ReadyReplicas, m.related.Owner.Replicas)
+		scaleHint := style.StatusMuted.Render(" 🔼 🔽")
+		b.WriteString(fmt.Sprintf("  %-12s %s%s\n", "Replicas:", style.StatusRunning.Render(replicaStr), scaleHint))
+	}
+
+	statusStyle := style.GetStatusStyle(m.pod.Status)
+	b.WriteString(fmt.Sprintf("  %-12s %s\n", "Status:", statusStyle.Render(m.pod.Status)))
+	b.WriteString(fmt.Sprintf("  %-12s %s\n", "Ready:", m.pod.Ready))
+	b.WriteString(fmt.Sprintf("  %-12s %d\n", "Restarts:", m.pod.Restarts))
+	b.WriteString(fmt.Sprintf("  %-12s %s\n", "Age:", m.pod.Age))
+
 	b.WriteString(fmt.Sprintf("  %-12s %s\n", "Node:", style.Truncate(m.pod.Node, m.width-16)))
 	b.WriteString(fmt.Sprintf("  %-12s %s\n", "IP:", m.pod.IP))
 
@@ -169,20 +197,8 @@ func (m ManifestPanel) renderPodInfo() string {
 		b.WriteString(fmt.Sprintf("  %-12s %s\n", "Image:", style.Truncate(image, m.width-16)))
 	}
 
-	statusStyle := style.GetStatusStyle(m.pod.Status)
-	b.WriteString(fmt.Sprintf("  %-12s %s\n", "Status:", statusStyle.Render(m.pod.Status)))
-	b.WriteString(fmt.Sprintf("  %-12s %s\n", "Ready:", m.pod.Ready))
-	b.WriteString(fmt.Sprintf("  %-12s %d\n", "Restarts:", m.pod.Restarts))
-	b.WriteString(fmt.Sprintf("  %-12s %s\n", "Age:", m.pod.Age))
-
 	if m.pod.OwnerRef != "" {
 		b.WriteString(fmt.Sprintf("  %-12s %s/%s\n", "Owner:", m.pod.OwnerKind, m.pod.OwnerRef))
-		// Show workload that created the ReplicaSet - styled as link with [w] hint
-		if m.related != nil && m.related.Owner != nil && m.related.Owner.WorkloadKind != "" {
-			workloadValue := fmt.Sprintf("%s/%s", m.related.Owner.WorkloadKind, m.related.Owner.WorkloadName)
-			linkStyle := style.StatusRunning
-			b.WriteString(fmt.Sprintf("  %-12s %s\n", "Workload:", linkStyle.Render(workloadValue+" [w]")))
-		}
 	}
 
 	return b.String()

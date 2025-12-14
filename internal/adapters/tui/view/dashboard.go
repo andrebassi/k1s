@@ -98,6 +98,21 @@ type DescribeOutputMsg struct {
 	Err     error
 }
 
+// ScaleResultMsg contains the result of a scale operation
+type ScaleResultMsg struct {
+	Success  bool
+	Replicas int32
+	Err      error
+}
+
+// ScaleRequestMsg is sent when scale operation is requested from dashboard
+type ScaleRequestMsg struct {
+	WorkloadKind string
+	WorkloadName string
+	Namespace    string
+	NewReplicas  int32
+}
+
 func (d Dashboard) Update(msg tea.Msg) (Dashboard, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
@@ -118,6 +133,16 @@ func (d Dashboard) Update(msg tea.Msg) (Dashboard, tea.Cmd) {
 			d.statusMsg = "Describe failed: " + result.Err.Error()
 		} else {
 			d.resultViewer.Show(result.Title, result.Content, d.width-4, d.height-4)
+		}
+		return d, nil
+	}
+
+	// Handle ScaleResultMsg (scale operation result)
+	if result, ok := msg.(ScaleResultMsg); ok {
+		if result.Err != nil {
+			d.statusMsg = "Scale failed: " + result.Err.Error()
+		} else {
+			d.statusMsg = fmt.Sprintf("Scaled to %d replicas (press 'r' to refresh)", result.Replicas)
 		}
 		return d, nil
 	}
@@ -379,6 +404,40 @@ func (d Dashboard) Update(msg tea.Msg) (Dashboard, tea.Cmd) {
 				}
 			}
 
+		// 's' key scales up the workload (works from any panel)
+		case msg.String() == "s":
+			if d.pod != nil && d.manifest.HasWorkload() {
+				workloadKind, workloadName := d.manifest.GetWorkload()
+				currentReplicas := d.manifest.GetReplicas()
+				newReplicas := currentReplicas + 1
+				return d, func() tea.Msg {
+					return ScaleRequestMsg{
+						WorkloadKind: workloadKind,
+						WorkloadName: workloadName,
+						Namespace:    d.namespace,
+						NewReplicas:  newReplicas,
+					}
+				}
+			}
+
+		// 'd' key scales down the workload (works from any panel)
+		case msg.String() == "d":
+			if d.pod != nil && d.manifest.HasWorkload() {
+				workloadKind, workloadName := d.manifest.GetWorkload()
+				currentReplicas := d.manifest.GetReplicas()
+				if currentReplicas > 0 {
+					newReplicas := currentReplicas - 1
+					return d, func() tea.Msg {
+						return ScaleRequestMsg{
+							WorkloadKind: workloadKind,
+							WorkloadName: workloadName,
+							Namespace:    d.namespace,
+							NewReplicas:  newReplicas,
+						}
+					}
+				}
+			}
+
 		case key.Matches(msg, d.keys.ToggleFullView):
 			if d.fullscreen {
 				// Exiting fullscreen - clear search
@@ -555,15 +614,8 @@ func (d Dashboard) View() string {
 
 	var b strings.Builder
 
-	// Show breadcrumb with optional status message
-	breadcrumbView := d.breadcrumb.View()
-	if d.statusMsg != "" {
-		statusStyle := lipgloss.NewStyle().
-			Foreground(style.Success).
-			Bold(true)
-		breadcrumbView = breadcrumbView + "  " + statusStyle.Render(d.statusMsg)
-	}
-	b.WriteString(breadcrumbView)
+	// Show breadcrumb
+	b.WriteString(d.breadcrumb.View())
 	b.WriteString("\n")
 
 	if d.fullscreen {
