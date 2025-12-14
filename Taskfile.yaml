@@ -508,3 +508,52 @@ tasks:
         sh: git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.2"
     cmds:
       - K1S_VERSION={{.TAG}} ./scripts/test-install.sh local
+
+  test:docker:curl:debian:
+    desc: Test curl install script on Debian via Docker
+    cmds:
+      - |
+        docker run --rm debian:bookworm bash -c "
+          apt-get update -qq >/dev/null 2>&1
+          apt-get install -y -qq curl >/dev/null 2>&1
+          echo '=== Testing curl install on Debian ==='
+          curl -sSL https://cdn.jsdelivr.net/gh/andrebassi/k1s@main/scripts/install.sh | bash
+        "
+
+  test:docker:curl:ubuntu:
+    desc: Test curl install script on Ubuntu via Docker
+    cmds:
+      - |
+        docker run --rm ubuntu:22.04 bash -c "
+          apt-get update -qq >/dev/null 2>&1
+          apt-get install -y -qq curl >/dev/null 2>&1
+          echo '=== Testing curl install on Ubuntu ==='
+          curl -sSL https://cdn.jsdelivr.net/gh/andrebassi/k1s@main/scripts/install.sh | bash
+        "
+
+  test:docker:curl:fedora:
+    desc: Test curl install script on Fedora via Docker
+    cmds:
+      - |
+        docker run --rm fedora:latest bash -c "
+          echo '=== Testing curl install on Fedora ==='
+          curl -sSL https://cdn.jsdelivr.net/gh/andrebassi/k1s@main/scripts/install.sh | bash
+        "
+
+  test:docker:curl:alpine:
+    desc: Test curl install script on Alpine via Docker
+    cmds:
+      - |
+        docker run --rm alpine:latest sh -c "
+          apk add --no-cache curl bash >/dev/null 2>&1
+          echo '=== Testing curl install on Alpine ==='
+          curl -sSL https://cdn.jsdelivr.net/gh/andrebassi/k1s@main/scripts/install.sh | bash
+        "
+
+  test:docker:curl:all:
+    desc: Test curl install script on all platforms via Docker
+    cmds:
+      - task: test:docker:curl:debian
+      - task: test:docker:curl:ubuntu
+      - task: test:docker:curl:fedora
+      - task: test:docker:curl:alpine
