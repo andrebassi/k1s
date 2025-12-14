@@ -36,12 +36,12 @@ error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 # Show banner
 show_banner() {
     echo ""
-    echo -e "${BLUE}╔═══════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║${NC}                                                           ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC}   ${GREEN}k1s${NC} - Kubernetes TUI Debugger                           ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC}   One screen to see why your pod is broken.               ${BLUE}║${NC}"
-    echo -e "${BLUE}║${NC}                                                           ${BLUE}║${NC}"
-    echo -e "${BLUE}╚═══════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${BLUE}╔═════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║${NC}                                                         ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC}   ${GREEN}k1s${NC} - Kubernetes TUI Debugger                         ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC}   One screen to see why your pod is broken.            ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC}                                                         ${BLUE}║${NC}"
+    echo -e "${BLUE}╚═════════════════════════════════════════════════════════╝${NC}"
     echo ""
 }
 
