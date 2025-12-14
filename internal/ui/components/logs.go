@@ -14,16 +14,19 @@ import (
 	"github.com/andrebassi/k1s/internal/ui/styles"
 )
 
+// TimeFilter represents time-based log filtering options.
 type TimeFilter int
 
+// Available time filter options for log display.
 const (
-	TimeFilterAll TimeFilter = iota
-	TimeFilter5Min
-	TimeFilter15Min
-	TimeFilter1Hour
-	TimeFilter6Hours
+	TimeFilterAll    TimeFilter = iota // Show all logs
+	TimeFilter5Min                     // Last 5 minutes
+	TimeFilter15Min                    // Last 15 minutes
+	TimeFilter1Hour                    // Last hour
+	TimeFilter6Hours                   // Last 6 hours
 )
 
+// timeFilterLabels maps TimeFilter values to display labels.
 var timeFilterLabels = map[TimeFilter]string{
 	TimeFilterAll:    "All",
 	TimeFilter5Min:   "5m",
@@ -32,6 +35,9 @@ var timeFilterLabels = map[TimeFilter]string{
 	TimeFilter6Hours: "6h",
 }
 
+// LogsPanel displays container logs with filtering and search capabilities.
+// Features include: time filtering, text search, multi-container support,
+// follow mode, and error highlighting.
 type LogsPanel struct {
 	logs         []k8s.LogLine
 	viewport     viewport.Model
@@ -49,6 +55,8 @@ type LogsPanel struct {
 	copyStatus   string // Status message after copy
 }
 
+// NewLogsPanel creates a new logs panel with default settings.
+// Follow mode is enabled by default, showing all containers.
 func NewLogsPanel() LogsPanel {
 	ti := textinput.New()
 	ti.Placeholder = "Search logs..."

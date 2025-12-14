@@ -1,10 +1,15 @@
+// Package styles provides consistent visual styling for the k1s TUI.
+//
+// This package defines colors, text styles, and layout styles using lipgloss.
+// All styles are optimized for readability on dark terminal backgrounds.
+// The color palette uses accessible, high-contrast colors for status indicators.
 package styles
 
 import "github.com/charmbracelet/lipgloss"
 
+// Color palette - optimized for readability on dark terminals.
 var (
-	// Colors - optimized for readability on dark terminals
-	Primary     = lipgloss.Color("#3B82F6") // Dark blue
+	Primary     = lipgloss.Color("#3B82F6") // Dark blue - primary accent
 	Secondary   = lipgloss.Color("#22D3EE") // Bright cyan - good contrast
 	Success     = lipgloss.Color("#4ADE80") // Bright green - very readable
 	Warning     = lipgloss.Color("#FBBF24") // Amber - warm and visible
@@ -157,6 +162,8 @@ var (
 			Padding(0, 1)
 )
 
+// GetStatusStyle returns the appropriate style for a Kubernetes resource status.
+// Maps status strings to color-coded styles (green=running, yellow=pending, red=error).
 func GetStatusStyle(status string) lipgloss.Style {
 	switch status {
 	case "Running", "Completed", "Active", "Ready":
@@ -170,10 +177,12 @@ func GetStatusStyle(status string) lipgloss.Style {
 	}
 }
 
+// RenderWithWidth applies a style with a fixed width and renders the content.
 func RenderWithWidth(s lipgloss.Style, content string, width int) string {
 	return s.Width(width).Render(content)
 }
 
+// Truncate shortens a string to the given width, adding "..." if truncated.
 func Truncate(s string, width int) string {
 	if len(s) <= width {
 		return s
@@ -184,6 +193,8 @@ func Truncate(s string, width int) string {
 	return s[:width-3] + "..."
 }
 
+// PadRight pads a string with spaces to reach the given width.
+// If the string is longer than width, it is truncated.
 func PadRight(s string, width int) string {
 	if len(s) >= width {
 		return s[:width]
@@ -191,6 +202,7 @@ func PadRight(s string, width int) string {
 	return s + spaces(width-len(s))
 }
 
+// spaces returns a string of n space characters.
 func spaces(n int) string {
 	if n <= 0 {
 		return ""

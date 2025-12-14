@@ -11,6 +11,9 @@ import (
 	"github.com/andrebassi/k1s/internal/ui/styles"
 )
 
+// MetricsPanel displays resource usage metrics in a two-column layout.
+// Left column shows container CPU/memory usage, right column shows node information.
+// Supports independent scrolling of each column with arrow key navigation.
 type MetricsPanel struct {
 	metrics          *k8s.PodMetrics
 	pod              *k8s.PodInfo

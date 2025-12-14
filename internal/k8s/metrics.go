@@ -8,20 +8,25 @@ import (
 	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
+// PodMetrics contains resource usage data for a pod and its containers.
+// This data comes from the Kubernetes metrics-server.
 type PodMetrics struct {
-	Name       string
-	Namespace  string
-	Containers []ContainerMetrics
+	Name       string             // Pod name
+	Namespace  string             // Pod namespace
+	Containers []ContainerMetrics // Per-container resource usage
 }
 
+// ContainerMetrics contains CPU and memory usage for a single container.
 type ContainerMetrics struct {
-	Name        string
-	CPUUsage    string
-	MemoryUsage string
-	CPUPercent  float64
-	MemPercent  float64
+	Name        string  // Container name
+	CPUUsage    string  // Formatted CPU usage (e.g., "100m", "1.5")
+	MemoryUsage string  // Formatted memory usage (e.g., "128Mi", "1.2Gi")
+	CPUPercent  float64 // CPU usage as percentage of limit (if set)
+	MemPercent  float64 // Memory usage as percentage of limit (if set)
 }
 
+// GetPodMetrics retrieves current resource usage for a specific pod.
+// Returns an error if metrics-server is not available in the cluster.
 func GetPodMetrics(ctx context.Context, metricsClient *metricsv.Clientset, namespace, podName string) (*PodMetrics, error) {
 	if metricsClient == nil {
 		return nil, fmt.Errorf("metrics server not available")
@@ -51,6 +56,8 @@ func GetPodMetrics(ctx context.Context, metricsClient *metricsv.Clientset, names
 	return pm, nil
 }
 
+// GetNamespaceMetrics retrieves resource usage for all pods in a namespace.
+// Returns an error if metrics-server is not available in the cluster.
 func GetNamespaceMetrics(ctx context.Context, metricsClient *metricsv.Clientset, namespace string) ([]PodMetrics, error) {
 	if metricsClient == nil {
 		return nil, fmt.Errorf("metrics server not available")
@@ -84,6 +91,9 @@ func GetNamespaceMetrics(ctx context.Context, metricsClient *metricsv.Clientset,
 	return result, nil
 }
 
+// formatCPU converts millicores to a human-readable string.
+// Values under 1000m are shown as millicores (e.g., "500m"),
+// values at or above 1000m are shown as cores (e.g., "1.50").
 func formatCPU(milliCores int64) string {
 	if milliCores < 1000 {
 		return fmt.Sprintf("%dm", milliCores)
@@ -91,6 +101,8 @@ func formatCPU(milliCores int64) string {
 	return fmt.Sprintf("%.2f", float64(milliCores)/1000)
 }
 
+// formatMemory converts bytes to a human-readable string using binary units.
+// Uses Ki, Mi, Gi suffixes following Kubernetes conventions.
 func formatMemory(bytes int64) string {
 	const (
 		KB = 1024
@@ -110,15 +122,20 @@ func formatMemory(bytes int64) string {
 	}
 }
 
+// ResourceUsageSummary provides an aggregated view of pod resource usage.
+// Includes flags for resource pressure conditions.
 type ResourceUsageSummary struct {
-	CPUUsed     string
-	CPUPercent  float64
-	MemUsed     string
-	MemPercent  float64
-	IsThrottled bool
-	IsOOM       bool
+	CPUUsed     string  // Total CPU usage across all containers
+	CPUPercent  float64 // CPU usage as percentage of total limits
+	MemUsed     string  // Total memory usage across all containers
+	MemPercent  float64 // Memory usage as percentage of total limits
+	IsThrottled bool    // True if CPU throttling is detected
+	IsOOM       bool    // True if OOM conditions are detected
 }
 
+// CalculateResourceUsage computes aggregated resource usage for a pod.
+// Combines metrics data with pod spec to calculate percentages.
+// Returns nil if metrics or pod info is unavailable.
 func CalculateResourceUsage(metrics *PodMetrics, pod *PodInfo) *ResourceUsageSummary {
 	if metrics == nil || pod == nil {
 		return nil
@@ -130,7 +147,7 @@ func CalculateResourceUsage(metrics *PodMetrics, pod *PodInfo) *ResourceUsageSum
 	var totalMem int64
 
 	for _, cm := range metrics.Containers {
-		_ = cm
+		_ = cm // Placeholder for future metric aggregation
 	}
 
 	summary.CPUUsed = formatCPU(totalCPU)

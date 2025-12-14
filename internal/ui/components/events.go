@@ -12,6 +12,8 @@ import (
 	"github.com/andrebassi/k1s/internal/ui/styles"
 )
 
+// EventsPanel displays Kubernetes events with filtering capabilities.
+// Features include: warning-only filter, text search, and clipboard copy.
 type EventsPanel struct {
 	events      []k8s.EventInfo
 	viewport    viewport.Model
@@ -26,6 +28,7 @@ type EventsPanel struct {
 	filter      string
 }
 
+// NewEventsPanel creates a new events panel with default settings.
 func NewEventsPanel() EventsPanel {
 	ti := textinput.New()
 	ti.Placeholder = "Search events..."

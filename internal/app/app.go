@@ -1,3 +1,9 @@
+// Package app provides the main application logic for k1s.
+//
+// This package implements the bubbletea Model interface, managing
+// the application state, view transitions, and message handling.
+// It coordinates between the Kubernetes client, UI components,
+// and user interactions.
 package app
 
 import (
@@ -18,13 +24,17 @@ import (
 	"github.com/andrebassi/k1s/internal/ui/views"
 )
 
+// ViewState represents the current view mode of the application.
 type ViewState int
 
+// Application view states.
 const (
-	ViewNavigator ViewState = iota
-	ViewDashboard
+	ViewNavigator ViewState = iota // Resource navigation view (namespaces, pods, etc.)
+	ViewDashboard                  // Pod debugging dashboard (logs, events, metrics)
 )
 
+// Model is the main application state implementing tea.Model.
+// It holds all UI components, Kubernetes client, and application state.
 type Model struct {
 	k8sClient          *k8s.Client
 	config             *config.Config
@@ -61,6 +71,7 @@ type Model struct {
 	startWithResources bool
 }
 
+// loadedMsg is sent when initial data loading completes.
 type loadedMsg struct {
 	workloads  []k8s.WorkloadInfo
 	namespaces []string
@@ -68,6 +79,7 @@ type loadedMsg struct {
 	err        error
 }
 
+// resourcesLoadedMsg is sent when namespace resources are loaded.
 type resourcesLoadedMsg struct {
 	pods       []k8s.PodInfo
 	configmaps []k8s.ConfigMapInfo
@@ -75,6 +87,7 @@ type resourcesLoadedMsg struct {
 	err        error
 }
 
+// dashboardDataMsg is sent when pod dashboard data is ready.
 type dashboardDataMsg struct {
 	pod     *k8s.PodInfo
 	logs    []k8s.LogLine
@@ -131,15 +144,18 @@ type initialResourcesLoadedMsg struct {
 	err        error
 }
 
-// Options for creating a new app model
+// Options configures the application initialization.
 type Options struct {
-	Namespace string // Initial namespace to select
+	Namespace string // Initial namespace to select (empty for interactive selection)
 }
 
+// New creates a new application model with default options.
 func New() (*Model, error) {
 	return NewWithOptions(Options{})
 }
 
+// NewWithOptions creates a new application model with the specified options.
+// If a namespace is provided, the app starts directly in the resources view.
 func NewWithOptions(opts Options) (*Model, error) {
 	client, err := k8s.NewClient()
 	if err != nil {

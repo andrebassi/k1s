@@ -13,24 +13,30 @@ import (
 	"github.com/andrebassi/k1s/internal/ui/styles"
 )
 
+// NavigatorMode represents the current navigation context.
 type NavigatorMode int
 
+// Navigation modes for different resource views.
 const (
-	ModeWorkloads NavigatorMode = iota
-	ModeResources
-	ModeNamespace
-	ModeResourceType
+	ModeWorkloads    NavigatorMode = iota // Viewing workload list (deployments, pods, etc.)
+	ModeResources                          // Viewing namespace resources
+	ModeNamespace                          // Selecting a namespace
+	ModeResourceType                       // Selecting a resource type
 )
 
+// PodViewSection represents sections within the resources view.
 type PodViewSection int
 
+// Available sections in the resources view.
 const (
-	SectionPods PodViewSection = iota
-	SectionConfigMaps
-	SectionSecrets
-	SectionDockerRegistry
+	SectionPods           PodViewSection = iota // Pod list section
+	SectionConfigMaps                           // ConfigMap list section
+	SectionSecrets                              // Secret list section
+	SectionDockerRegistry                       // Docker registry secrets section
 )
 
+// Navigator provides the main navigation interface for browsing cluster resources.
+// It supports multiple modes: workload selection, namespace selection, and resource browsing.
 type Navigator struct {
 	workloads    []k8s.WorkloadInfo
 	pods         []k8s.PodInfo

@@ -215,7 +215,7 @@ func (m ManifestPanel) renderContainers() string {
 		if len(c.Ports) > 0 {
 			ports := make([]string, len(c.Ports))
 			for i, p := range c.Ports {
-				ports[i] = fmt.Sprintf("%d", p)
+				ports[i] = fmt.Sprintf("%d/%s", p.ContainerPort, p.Protocol)
 			}
 			b.WriteString(fmt.Sprintf("    Ports:    %s\n", strings.Join(ports, ", ")))
 		}

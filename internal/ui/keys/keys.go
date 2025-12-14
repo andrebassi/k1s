@@ -1,7 +1,14 @@
+// Package keys defines keyboard bindings for the k1s TUI.
+//
+// This package provides a centralized KeyMap structure that maps
+// keyboard inputs to application actions. It supports vim-style
+// navigation (j/k/h/l), arrow keys, and mnemonic shortcuts.
 package keys
 
 import "github.com/charmbracelet/bubbles/key"
 
+// KeyMap holds all keyboard bindings used throughout the application.
+// Each binding includes the key combination and help text for display.
 type KeyMap struct {
 	// Navigation
 	Up        key.Binding
@@ -54,6 +61,8 @@ type KeyMap struct {
 	Restart key.Binding
 }
 
+// DefaultKeyMap returns the standard keyboard bindings for k1s.
+// Includes vim-style navigation (j/k/h/l), arrow keys, and action shortcuts.
 func DefaultKeyMap() KeyMap {
 	return KeyMap{
 		// Navigation

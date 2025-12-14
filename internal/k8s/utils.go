@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+// formatAge converts a timestamp to a human-readable age string.
+// Outputs formats like "45s", "5m", "2h", "3d" depending on the duration.
 func formatAge(t time.Time) string {
 	if t.IsZero() {
 		return "Unknown"
@@ -28,6 +30,8 @@ func formatAge(t time.Time) string {
 	}
 }
 
+// TruncateString shortens a string to maxLen characters, adding "..." if truncated.
+// If maxLen is 3 or less, no ellipsis is added to preserve the limited space.
 func TruncateString(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
@@ -38,6 +42,9 @@ func TruncateString(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
+// FormatLabels converts a label map to a human-readable string.
+// Shows up to 3 labels with a "(+N more)" suffix if there are more.
+// Returns "<none>" if the map is empty.
 func FormatLabels(labels map[string]string) string {
 	if len(labels) == 0 {
 		return "<none>"
@@ -62,15 +69,22 @@ func FormatLabels(labels map[string]string) string {
 	return result
 }
 
+// DebugHelper provides diagnostic information about a pod issue.
+// Used to display helpful suggestions in the UI when problems are detected.
 type DebugHelper struct {
-	Issue       string
-	Severity    string
-	Suggestions []string
+	Issue       string   // Brief description of the problem
+	Severity    string   // "High", "Medium", "Warning", or "Info"
+	Suggestions []string // Actionable steps to investigate or resolve
 }
 
+// AnalyzePodIssues examines pod state and events to identify common problems.
+// Returns a list of DebugHelper structs with diagnostic information.
+// Detects issues like CrashLoopBackOff, ImagePullBackOff, Pending pods,
+// OOMKilled containers, and missing resource limits.
 func AnalyzePodIssues(pod *PodInfo, events []EventInfo) []DebugHelper {
 	var helpers []DebugHelper
 
+	// Check pod status for common problems
 	switch pod.Status {
 	case "CrashLoopBackOff":
 		helpers = append(helpers, DebugHelper{
@@ -121,6 +135,7 @@ func AnalyzePodIssues(pod *PodInfo, events []EventInfo) []DebugHelper {
 		})
 	}
 
+	// Check for missing resource limits (best practice warnings)
 	for _, c := range pod.Containers {
 		if c.Resources.MemoryLimit == "0" || c.Resources.MemoryLimit == "" {
 			helpers = append(helpers, DebugHelper{
@@ -143,6 +158,7 @@ func AnalyzePodIssues(pod *PodInfo, events []EventInfo) []DebugHelper {
 		}
 	}
 
+	// Check events for scheduling failures
 	for _, e := range events {
 		if e.Type == "Warning" && e.Reason == "FailedScheduling" {
 			helpers = append(helpers, DebugHelper{

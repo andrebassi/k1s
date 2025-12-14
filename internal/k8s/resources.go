@@ -18,8 +18,10 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
+// ResourceType identifies the kind of Kubernetes workload resource.
 type ResourceType string
 
+// Supported workload resource types.
 const (
 	ResourcePods         ResourceType = "pods"
 	ResourceDeployments  ResourceType = "deployments"
@@ -29,6 +31,7 @@ const (
 	ResourceCronJobs     ResourceType = "cronjobs"
 )
 
+// AllResourceTypes lists all supported workload types in display order.
 var AllResourceTypes = []ResourceType{
 	ResourceDeployments,
 	ResourceStatefulSets,
@@ -38,149 +41,165 @@ var AllResourceTypes = []ResourceType{
 	ResourcePods,
 }
 
+// WorkloadInfo provides a summary view of a Kubernetes workload.
+// This is used for listing workloads in the navigation view.
 type WorkloadInfo struct {
-	Name         string
-	Namespace    string
-	Type         ResourceType
-	Ready        string
-	Replicas     int32
-	Age          string
-	Status       string
-	Labels       map[string]string
-	RestartCount int32
+	Name         string            // Workload name
+	Namespace    string            // Namespace containing the workload
+	Type         ResourceType      // Type of workload (deployment, statefulset, etc.)
+	Ready        string            // Ready status (e.g., "3/3")
+	Replicas     int32             // Desired replica count
+	Age          string            // Human-readable age
+	Status       string            // Current status (Running, Progressing, Failed, etc.)
+	Labels       map[string]string // Selector labels for finding pods
+	RestartCount int32             // Total restart count across all pods
 }
 
+// PodInfo provides comprehensive information about a Kubernetes pod.
+// This includes all details needed for debugging and inspection.
 type PodInfo struct {
-	Name                   string
-	Namespace              string
-	Node                   string
-	Status                 string
-	Ready                  string
-	Restarts               int32
-	Age                    string
-	IP                     string
-	HostIP                 string
-	Labels                 map[string]string
-	Annotations            map[string]string
-	Containers             []ContainerInfo
-	InitContainers         []ContainerInfo
-	Conditions             []corev1.PodCondition
-	Phase                  corev1.PodPhase
-	OwnerRef               string
-	OwnerKind              string
-	QoSClass               string
-	ServiceAccount         string
-	Volumes                []VolumeInfo
-	RestartPolicy          string
-	DNSPolicy              string
-	PriorityClassName      string
-	Priority               *int32
-	NodeSelector           map[string]string
-	Tolerations            []TolerationInfo
-	TerminationGracePeriod int64
-	StartTime              string
+	Name                   string                 // Pod name
+	Namespace              string                 // Namespace
+	Node                   string                 // Node where the pod is scheduled
+	Status                 string                 // Current status (Running, Pending, Failed, etc.)
+	Ready                  string                 // Ready containers (e.g., "2/2")
+	Restarts               int32                  // Total restart count
+	Age                    string                 // Human-readable age
+	IP                     string                 // Pod IP address
+	HostIP                 string                 // Node IP address
+	Labels                 map[string]string      // Pod labels
+	Annotations            map[string]string      // Pod annotations
+	Containers             []ContainerInfo        // Regular containers
+	InitContainers         []ContainerInfo        // Init containers
+	Conditions             []corev1.PodCondition  // Pod conditions
+	Phase                  corev1.PodPhase        // Pod phase
+	OwnerRef               string                 // Owner reference name
+	OwnerKind              string                 // Owner reference kind
+	QoSClass               string                 // Quality of Service class
+	ServiceAccount         string                 // Service account name
+	Volumes                []VolumeInfo           // Volume definitions
+	RestartPolicy          string                 // Restart policy
+	DNSPolicy              string                 // DNS policy
+	PriorityClassName      string                 // Priority class name
+	Priority               *int32                 // Scheduling priority
+	NodeSelector           map[string]string      // Node selector constraints
+	Tolerations            []TolerationInfo       // Node tolerations
+	TerminationGracePeriod int64                  // Termination grace period in seconds
+	StartTime              string                 // Pod start time
 }
 
+// ContainerInfo provides details about a container within a pod.
 type ContainerInfo struct {
-	Name            string
-	Image           string
-	ImagePullPolicy string
-	Ready           bool
-	RestartCount    int32
-	State           string
-	Reason          string
-	Message         string
-	StartedAt       string
-	FinishedAt      string
-	ExitCode        *int32
-	Resources       ResourceRequirements
-	Ports           []ContainerPort
-	LivenessProbe   *ProbeInfo
-	ReadinessProbe  *ProbeInfo
-	StartupProbe    *ProbeInfo
-	SecurityContext *SecurityContextInfo
-	EnvVarCount     int
-	VolumeMounts    []VolumeMountInfo
+	Name            string               // Container name
+	Image           string               // Container image
+	ImagePullPolicy string               // Image pull policy
+	Ready           bool                 // Whether the container is ready
+	RestartCount    int32                // Number of restarts
+	State           string               // Current state (Running, Waiting, Terminated)
+	Reason          string               // Reason for current state
+	Message         string               // Additional state message
+	StartedAt       string               // Container start time
+	FinishedAt      string               // Container finish time (if terminated)
+	ExitCode        *int32               // Exit code (if terminated)
+	Resources       ResourceRequirements // Resource requests and limits
+	Ports           []ContainerPort      // Exposed ports
+	LivenessProbe   *ProbeInfo           // Liveness probe configuration
+	ReadinessProbe  *ProbeInfo           // Readiness probe configuration
+	StartupProbe    *ProbeInfo           // Startup probe configuration
+	SecurityContext *SecurityContextInfo // Security context settings
+	EnvVarCount     int                  // Number of environment variables
+	VolumeMounts    []VolumeMountInfo    // Volume mount configurations
 }
 
+// ContainerPort represents an exposed container port.
 type ContainerPort struct {
-	Name          string
-	ContainerPort int32
-	Protocol      string
+	Name          string // Port name (optional)
+	ContainerPort int32  // Port number
+	Protocol      string // Protocol (TCP, UDP)
 }
 
+// VolumeMountInfo describes a volume mount within a container.
 type VolumeMountInfo struct {
-	Name      string
-	MountPath string
-	ReadOnly  bool
+	Name      string // Volume name
+	MountPath string // Mount path in the container
+	ReadOnly  bool   // Whether the mount is read-only
 }
 
+// TolerationInfo describes a pod toleration for node taints.
 type TolerationInfo struct {
-	Key      string
-	Operator string
-	Value    string
-	Effect   string
+	Key      string // Taint key to tolerate
+	Operator string // Operator (Equal, Exists)
+	Value    string // Taint value to match
+	Effect   string // Taint effect (NoSchedule, NoExecute, PreferNoSchedule)
 }
 
+// ProbeInfo describes a container health probe configuration.
 type ProbeInfo struct {
-	Type            string // HTTP, TCP, Exec
-	Path            string // for HTTP
-	Port            int32
-	Scheme          string // HTTP or HTTPS
-	Command         []string // for Exec
-	InitialDelay    int32
-	Period          int32
-	Timeout         int32
-	SuccessThreshold int32
-	FailureThreshold int32
+	Type             string   // Probe type: HTTP, TCP, Exec, or gRPC
+	Path             string   // HTTP path (for HTTP probes)
+	Port             int32    // Target port
+	Scheme           string   // HTTP scheme (HTTP or HTTPS)
+	Command          []string // Command to execute (for Exec probes)
+	InitialDelay     int32    // Initial delay in seconds
+	Period           int32    // Check period in seconds
+	Timeout          int32    // Timeout in seconds
+	SuccessThreshold int32    // Consecutive successes required
+	FailureThreshold int32    // Consecutive failures required
 }
 
+// SecurityContextInfo contains container security settings.
 type SecurityContextInfo struct {
-	RunAsUser    *int64
-	RunAsGroup   *int64
-	RunAsNonRoot *bool
-	Privileged   *bool
-	ReadOnlyRoot *bool
+	RunAsUser    *int64 // User ID to run as
+	RunAsGroup   *int64 // Group ID to run as
+	RunAsNonRoot *bool  // Whether to run as non-root
+	Privileged   *bool  // Whether to run in privileged mode
+	ReadOnlyRoot *bool  // Whether root filesystem is read-only
 }
 
+// VolumeInfo describes a volume attached to a pod.
 type VolumeInfo struct {
-	Name       string
-	Type       string // ConfigMap, Secret, PVC, EmptyDir, etc
-	Source     string // Name of ConfigMap/Secret/PVC
+	Name   string // Volume name
+	Type   string // Volume type (ConfigMap, Secret, PVC, EmptyDir, etc.)
+	Source string // Source name (ConfigMap/Secret/PVC name)
 }
 
+// ResourceRequirements contains CPU and memory requests and limits.
 type ResourceRequirements struct {
-	CPURequest    string
-	CPULimit      string
-	MemoryRequest string
-	MemoryLimit   string
+	CPURequest    string // CPU request (e.g., "100m", "0.5")
+	CPULimit      string // CPU limit
+	MemoryRequest string // Memory request (e.g., "128Mi", "1Gi")
+	MemoryLimit   string // Memory limit
 }
 
+// ConfigMapInfo provides a summary of a ConfigMap resource.
 type ConfigMapInfo struct {
-	Name string
-	Age  string
-	Keys int
+	Name string // ConfigMap name
+	Age  string // Human-readable age
+	Keys int    // Number of data keys
 }
 
+// NodeInfo provides information about a cluster node.
 type NodeInfo struct {
-	Name       string
-	Status     string
-	Roles      string
-	Age        string
-	Version    string
-	InternalIP string
-	PodCount   int
-	CPU        string
-	Memory     string
+	Name       string // Node name
+	Status     string // Node status (Ready, NotReady)
+	Roles      string // Node roles (master, worker, etc.)
+	Age        string // Human-readable age
+	Version    string // Kubelet version
+	InternalIP string // Node internal IP address
+	PodCount   int    // Number of pods on the node
+	CPU        string // CPU capacity
+	Memory     string // Memory capacity
 }
 
+// SecretInfo provides a summary of a Secret resource.
 type SecretInfo struct {
-	Name string
-	Type string
-	Age  string
-	Keys int
+	Name string // Secret name
+	Type string // Secret type (Opaque, kubernetes.io/tls, etc.)
+	Age  string // Human-readable age
+	Keys int    // Number of data keys
 }
 
+// ListNamespaces returns all namespace names in the cluster, sorted alphabetically.
 func ListNamespaces(ctx context.Context, clientset *kubernetes.Clientset) ([]string, error) {
 	nsList, err := clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -195,6 +214,8 @@ func ListNamespaces(ctx context.Context, clientset *kubernetes.Clientset) ([]str
 	return namespaces, nil
 }
 
+// ListWorkloads returns all workloads of the specified type in a namespace.
+// Supports pods, deployments, statefulsets, daemonsets, jobs, and cronjobs.
 func ListWorkloads(ctx context.Context, clientset *kubernetes.Clientset, namespace string, resourceType ResourceType) ([]WorkloadInfo, error) {
 	switch resourceType {
 	case ResourceDeployments:
@@ -385,6 +406,8 @@ func listPodsAsWorkloads(ctx context.Context, clientset *kubernetes.Clientset, n
 	return workloads, nil
 }
 
+// GetWorkloadPods returns all pods belonging to a workload.
+// Uses label selectors to find pods managed by the workload.
 func GetWorkloadPods(ctx context.Context, clientset *kubernetes.Clientset, workload WorkloadInfo) ([]PodInfo, error) {
 	if workload.Type == ResourcePods {
 		pod, err := clientset.CoreV1().Pods(workload.Namespace).Get(ctx, workload.Name, metav1.GetOptions{})
@@ -409,6 +432,7 @@ func GetWorkloadPods(ctx context.Context, clientset *kubernetes.Clientset, workl
 	return podInfos, nil
 }
 
+// GetPod retrieves detailed information about a specific pod.
 func GetPod(ctx context.Context, clientset *kubernetes.Clientset, namespace, name string) (*PodInfo, error) {
 	pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
@@ -1046,6 +1070,9 @@ type OwnerInfo struct {
 	WorkloadName string
 }
 
+// GetRelatedResources discovers resources related to a pod.
+// Returns services, ingresses, VirtualServices, gateways, ConfigMaps, and Secrets
+// that are connected to the pod through labels or volume mounts.
 func GetRelatedResources(ctx context.Context, clientset *kubernetes.Clientset, dynamicClient dynamic.Interface, pod PodInfo) (*RelatedResources, error) {
 	related := &RelatedResources{}
 

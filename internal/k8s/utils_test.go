@@ -289,10 +289,10 @@ func TestAnalyzePodIssues(t *testing.T) {
 
 func containsSubstring(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > 0 && contains(s, substr)))
+		(len(s) > 0 && containsStr(s, substr)))
 }
 
-func contains(s, substr string) bool {
+func containsStr(s, substr string) bool {
 	for i := 0; i <= len(s)-len(substr); i++ {
 		if s[i:i+len(substr)] == substr {
 			return true

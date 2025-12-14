@@ -1,3 +1,18 @@
+// Package main is the entry point for k1s, a Kubernetes Pod Debugger TUI.
+//
+// k1s provides a terminal-based user interface for debugging Kubernetes
+// workloads, offering real-time logs, events, metrics, and resource
+// inspection in a single dashboard view.
+//
+// Usage:
+//
+//	k1s [options]
+//
+// Options:
+//
+//	-h, --help         Show help message
+//	-v, --version      Show version information
+//	-n, --namespace    Go directly to resources view for specified namespace
 package main
 
 import (
@@ -8,12 +23,16 @@ import (
 	"github.com/andrebassi/k1s/internal/app"
 )
 
+// version defines the current version of k1s.
 const version = "0.1.0"
 
+// main initializes and runs the k1s TUI application.
+// It parses command-line arguments for namespace selection and help/version flags,
+// then starts the bubbletea program with alternate screen and mouse support.
 func main() {
 	var namespace string
 
-	// Parse arguments
+	// Parse command-line arguments manually to avoid external dependencies.
 	for i := 1; i < len(os.Args); i++ {
 		switch os.Args[i] {
 		case "--version", "-v":
@@ -64,6 +83,8 @@ func main() {
 	}
 }
 
+// printHelp displays the comprehensive help message including usage,
+// keyboard shortcuts, features, and configuration options.
 func printHelp() {
 	help := `k1s - Kubernetes Pod Debugger TUI
 

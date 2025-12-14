@@ -1,3 +1,9 @@
+// Package components provides reusable UI components for the k1s TUI.
+//
+// This package contains all visual components used in the application,
+// including navigation panels, log viewers, metrics displays, and dialogs.
+// Each component implements the bubbletea Model interface for consistent
+// state management and rendering.
 package components
 
 import (
@@ -6,7 +12,8 @@ import (
 	"strings"
 )
 
-// CopyToClipboard copies text to the system clipboard
+// CopyToClipboard copies text to the system clipboard.
+// It uses platform-specific commands: pbcopy (macOS), xclip/xsel (Linux), clip (Windows).
 func CopyToClipboard(text string) error {
 	var cmd *exec.Cmd
 

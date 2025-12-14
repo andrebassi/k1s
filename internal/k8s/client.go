@@ -1,3 +1,14 @@
+// Package k8s provides Kubernetes client operations for k1s.
+//
+// This package encapsulates all Kubernetes API interactions including:
+//   - Cluster connection and authentication
+//   - Resource listing and retrieval (pods, deployments, services, etc.)
+//   - Container logs and events
+//   - Metrics collection from metrics-server
+//   - Workload management (scale, restart, delete)
+//
+// The package uses the official Kubernetes client-go library and supports
+// both kubeconfig-based authentication and in-cluster service account tokens.
 package k8s
 
 import (
@@ -14,6 +25,9 @@ import (
 	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
+// Client wraps the Kubernetes clientset with additional functionality.
+// It provides a unified interface for interacting with the Kubernetes API,
+// including standard resources, custom resources (via dynamic client), and metrics.
 type Client struct {
 	clientset     *kubernetes.Clientset
 	metricsClient *metricsv.Clientset
@@ -23,6 +37,12 @@ type Client struct {
 	namespace     string
 }
 
+// NewClient creates a new Kubernetes client using the default kubeconfig.
+// It first attempts to use ~/.kube/config, falling back to in-cluster config
+// if running inside a Kubernetes cluster. The client includes:
+//   - Standard Kubernetes clientset for core resources
+//   - Metrics client for CPU/memory usage data
+//   - Dynamic client for custom resources (e.g., Istio VirtualServices)
 func NewClient() (*Client, error) {
 	kubeconfig := filepath.Join(homedir.HomeDir(), ".kube", "config")
 
@@ -41,6 +61,7 @@ func NewClient() (*Client, error) {
 		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
 	}
 
+	// Metrics client may fail if metrics-server is not installed
 	metricsClient, _ := metricsv.NewForConfig(config)
 
 	dynamicClient, err := dynamic.NewForConfig(config)
@@ -64,34 +85,46 @@ func NewClient() (*Client, error) {
 	}, nil
 }
 
+// DynamicClient returns the dynamic client for custom resource operations.
+// Use this for Istio resources, custom CRDs, and other non-standard resources.
 func (c *Client) DynamicClient() dynamic.Interface {
 	return c.dynamicClient
 }
 
+// Clientset returns the standard Kubernetes clientset.
+// Use this for core Kubernetes resources (pods, services, deployments, etc.).
 func (c *Client) Clientset() *kubernetes.Clientset {
 	return c.clientset
 }
 
+// MetricsClient returns the metrics client for resource usage data.
+// May return nil if metrics-server is not available in the cluster.
 func (c *Client) MetricsClient() *metricsv.Clientset {
 	return c.metricsClient
 }
 
+// Context returns the current Kubernetes context name.
 func (c *Client) Context() string {
 	return c.context
 }
 
+// Namespace returns the currently selected namespace.
 func (c *Client) Namespace() string {
 	return c.namespace
 }
 
+// SetNamespace changes the currently selected namespace.
 func (c *Client) SetNamespace(ns string) {
 	c.namespace = ns
 }
 
+// ListNamespaces returns all namespace names in the cluster, sorted alphabetically.
 func (c *Client) ListNamespaces(ctx context.Context) ([]string, error) {
 	return ListNamespaces(ctx, c.clientset)
 }
 
+// ListContexts returns all available Kubernetes contexts from kubeconfig
+// along with the currently active context name.
 func (c *Client) ListContexts() ([]string, string, error) {
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	config, err := rules.Load()
@@ -106,10 +139,13 @@ func (c *Client) ListContexts() ([]string, string, error) {
 	return contexts, config.CurrentContext, nil
 }
 
+// DeletePod deletes a pod by name in the specified namespace.
 func (c *Client) DeletePod(ctx context.Context, namespace, name string) error {
 	return DeletePod(ctx, c.clientset, namespace, name)
 }
 
+// ScaleWorkload scales a workload (Deployment or StatefulSet) to the specified replica count.
+// DaemonSets, Jobs, and CronJobs cannot be scaled and will return nil without error.
 func (c *Client) ScaleWorkload(ctx context.Context, namespace, name string, resourceType ResourceType, replicas int32) error {
 	switch resourceType {
 	case ResourceDeployments:
@@ -121,6 +157,9 @@ func (c *Client) ScaleWorkload(ctx context.Context, namespace, name string, reso
 	}
 }
 
+// RestartWorkload triggers a rolling restart of the specified workload.
+// This is done by updating the pod template annotation, forcing new pods to be created.
+// Jobs and CronJobs do not support restart and will return nil without error.
 func (c *Client) RestartWorkload(ctx context.Context, namespace, name string, resourceType ResourceType) error {
 	switch resourceType {
 	case ResourceDeployments:

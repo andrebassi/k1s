@@ -1,3 +1,8 @@
+// Package views provides the main view compositions for the k1s TUI.
+//
+// This package contains the Dashboard view, which is the primary interface
+// for debugging pods. The dashboard displays logs, events, metrics, and
+// pod details in a 2x2 panel layout.
 package views
 
 import (
@@ -14,15 +19,20 @@ import (
 	"github.com/andrebassi/k1s/internal/ui/styles"
 )
 
+// PanelFocus indicates which panel is currently focused in the dashboard.
 type PanelFocus int
 
+// Dashboard panel focus states.
 const (
-	FocusLogs PanelFocus = iota
-	FocusEvents
-	FocusMetrics
-	FocusManifest
+	FocusLogs     PanelFocus = iota // Logs panel (top-left)
+	FocusEvents                     // Events panel (top-right)
+	FocusMetrics                    // Metrics panel (bottom-left)
+	FocusManifest                   // Manifest/details panel (bottom-right)
 )
 
+// Dashboard is the main pod debugging view with a 2x2 panel layout.
+// It displays: Logs (top-left), Events (top-right), Metrics (bottom-left),
+// and Pod Details (bottom-right). Supports fullscreen mode for logs/events.
 type Dashboard struct {
 	pod           *k8s.PodInfo
 	related       *k8s.RelatedResources
@@ -47,6 +57,8 @@ type Dashboard struct {
 	pendingAction *components.PodActionItem // Action waiting for confirmation
 }
 
+// NewDashboard creates a new dashboard view with all panels initialized.
+// The logs panel is focused by default.
 func NewDashboard() Dashboard {
 	return Dashboard{
 		logs:          components.NewLogsPanel(),
