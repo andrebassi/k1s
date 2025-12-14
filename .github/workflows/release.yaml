@@ -22,9 +22,8 @@ jobs:
           go-version: '1.21'
 
       - name: Install Task
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
+        run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
 
       - name: Install go-ignore-cov
         run: go install github.com/quantumcycle/go-ignore-cov@v0.6.1
@@ -106,9 +105,8 @@ jobs:
           go-version: '1.21'
 
       - name: Install Task
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
+        run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
 
       - name: Setup Android NDK
         if: matrix.cgo == true
@@ -151,9 +149,8 @@ jobs:
           fetch-depth: 0
 
       - name: Install Task
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
+        run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
 
       - name: Download Linux binary
         uses: actions/download-artifact@v4
@@ -204,9 +201,8 @@ jobs:
           fetch-depth: 0
 
       - name: Install Task
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
+        run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
 
       - name: Get version
         id: version
