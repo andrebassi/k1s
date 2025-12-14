@@ -199,16 +199,28 @@ func (m *MetricsPanel) updateContent() {
 
 	// Build right column (node info) - without title, we add it later
 	var rightCol strings.Builder
+	// Calculate max value width for truncation (colWidth - label(12) - padding(4))
+	maxValueWidth := (m.width-3)/2 - 16
+	if maxValueWidth < 10 {
+		maxValueWidth = 10
+	}
+	// Helper to truncate string
+	truncate := func(s string, max int) string {
+		if len(s) > max {
+			return s[:max-3] + "..."
+		}
+		return s
+	}
 	if m.node != nil {
-		rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "Name:", m.node.Name))
+		rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "Name:", truncate(m.node.Name, maxValueWidth)))
 
 		statusStyle := style.StatusRunning
 		if m.node.Status != "Ready" {
 			statusStyle = style.StatusError
 		}
 		rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "Status:", statusStyle.Render(m.node.Status)))
-		rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "Roles:", m.node.Roles))
-		rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "Version:", m.node.Version))
+		rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "Roles:", truncate(m.node.Roles, maxValueWidth)))
+		rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "Version:", truncate(m.node.Version, maxValueWidth)))
 		rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "Age:", m.node.Age))
 		rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "IP:", m.node.InternalIP))
 		rightCol.WriteString(fmt.Sprintf("%-12s %d\n", "Pods:", m.node.PodCount))
@@ -219,7 +231,7 @@ func (m *MetricsPanel) updateContent() {
 			rightCol.WriteString(fmt.Sprintf("%-12s %s\n", "Memory:", m.node.Memory))
 		}
 	} else if m.pod != nil && m.pod.Node != "" {
-		rightCol.WriteString(fmt.Sprintf("%s\n", m.pod.Node))
+		rightCol.WriteString(fmt.Sprintf("%s\n", truncate(m.pod.Node, maxValueWidth+12)))
 	}
 
 	// Combine columns side by side if we have node info

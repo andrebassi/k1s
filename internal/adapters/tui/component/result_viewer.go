@@ -85,7 +85,6 @@ func (r ResultViewer) View() string {
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(style.Primary).
-		Background(style.Surface).
 		Padding(0, 1).
 		Width(r.width - 4)
 	b.WriteString(titleStyle.Render(r.title))

@@ -141,8 +141,7 @@ func (m ActionMenu) View() string {
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(style.Primary).
-		Padding(1, 2).
-		Background(style.Background)
+		Padding(1, 2)
 
 	return boxStyle.Render(content)
 }
@@ -366,8 +365,7 @@ func (m PodActionMenu) View() string {
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(style.Primary).
-		Padding(1, 2).
-		Background(style.Background)
+		Padding(1, 2)
 
 	return boxStyle.Render(content)
 }
@@ -502,8 +500,7 @@ func (m WorkloadActionMenu) View() string {
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(style.Primary).
-		Padding(1, 2).
-		Background(style.Background)
+		Padding(1, 2)
 	return boxStyle.Render(content)
 }
 

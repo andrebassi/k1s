@@ -25,14 +25,14 @@ var manifestViewModeLabels = map[ManifestViewMode]string{
 }
 
 type ManifestPanel struct {
-	pod       *repository.PodInfo
-	related   *repository.RelatedResources
-	helpers   []repository.DebugHelper
-	viewport  viewport.Model
-	ready     bool
-	width     int
-	height    int
-	viewMode  ManifestViewMode
+	pod      *repository.PodInfo
+	related  *repository.RelatedResources
+	helpers  []repository.DebugHelper
+	viewport viewport.Model
+	ready    bool
+	width    int
+	height   int
+	viewMode ManifestViewMode
 }
 
 func NewManifestPanel() ManifestPanel {
@@ -85,6 +85,19 @@ func (m *ManifestPanel) SetRelated(related *repository.RelatedResources) {
 func (m *ManifestPanel) SetHelpers(helpers []repository.DebugHelper) {
 	m.helpers = helpers
 	m.updateContent()
+}
+
+// GetWorkload returns the workload kind and name if available.
+func (m *ManifestPanel) GetWorkload() (kind, name string) {
+	if m.related != nil && m.related.Owner != nil && m.related.Owner.WorkloadKind != "" {
+		return m.related.Owner.WorkloadKind, m.related.Owner.WorkloadName
+	}
+	return "", ""
+}
+
+// HasWorkload returns true if there's a workload available.
+func (m *ManifestPanel) HasWorkload() bool {
+	return m.related != nil && m.related.Owner != nil && m.related.Owner.WorkloadKind != ""
 }
 
 func (m *ManifestPanel) SetSize(width, height int) {
@@ -164,9 +177,11 @@ func (m ManifestPanel) renderPodInfo() string {
 
 	if m.pod.OwnerRef != "" {
 		b.WriteString(fmt.Sprintf("  %-12s %s/%s\n", "Owner:", m.pod.OwnerKind, m.pod.OwnerRef))
-		// Show workload that created the ReplicaSet
+		// Show workload that created the ReplicaSet - styled as link with [w] hint
 		if m.related != nil && m.related.Owner != nil && m.related.Owner.WorkloadKind != "" {
-			b.WriteString(fmt.Sprintf("  %-12s %s/%s\n", "Workload:", m.related.Owner.WorkloadKind, m.related.Owner.WorkloadName))
+			workloadValue := fmt.Sprintf("%s/%s", m.related.Owner.WorkloadKind, m.related.Owner.WorkloadName)
+			linkStyle := style.StatusRunning
+			b.WriteString(fmt.Sprintf("  %-12s %s\n", "Workload:", linkStyle.Render(workloadValue+" [w]")))
 		}
 	}
 

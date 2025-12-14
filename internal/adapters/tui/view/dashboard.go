@@ -358,6 +358,27 @@ func (d Dashboard) Update(msg tea.Msg) (Dashboard, tea.Cmd) {
 			d.focus = FocusManifest
 			return d, nil
 
+		// 'w' key on Pod Details panel shows workload describe
+		case msg.String() == "w":
+			if d.focus == FocusManifest && d.pod != nil && d.manifest.HasWorkload() {
+				workloadKind, workloadName := d.manifest.GetWorkload()
+				d.statusMsg = "Loading workload describe..."
+				namespace := d.namespace
+				resourceType := strings.ToLower(workloadKind)
+				return d, func() tea.Msg {
+					cmdStr := fmt.Sprintf("kubectl describe %s %s -n %s", resourceType, workloadName, namespace)
+					c := exec.Command("sh", "-c", cmdStr)
+					output, err := c.CombinedOutput()
+					if err != nil {
+						return DescribeOutputMsg{Err: err}
+					}
+					return DescribeOutputMsg{
+						Title:   workloadKind + ": " + workloadName,
+						Content: string(output),
+					}
+				}
+			}
+
 		case key.Matches(msg, d.keys.ToggleFullView):
 			if d.fullscreen {
 				// Exiting fullscreen - clear search
@@ -633,7 +654,7 @@ func (d Dashboard) renderBottomRow() string {
 	manifestView := d.wrapPanel(d.manifest.View(), halfWidth-2, panelHeight, d.focus == FocusManifest)
 	metricsView := d.wrapPanel(d.metrics.View(), halfWidth-2, panelHeight, d.focus == FocusMetrics)
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, manifestView, metricsView)
+	return lipgloss.JoinHorizontal(lipgloss.Top, metricsView, manifestView)
 }
 
 func (d Dashboard) wrapPanel(content string, width, height int, active bool) string {

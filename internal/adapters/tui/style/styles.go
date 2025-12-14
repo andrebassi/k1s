@@ -61,6 +61,11 @@ var (
 				Background(Primary).
 				Bold(true)
 
+	SelectedStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#1F2937")).
+			Background(Success).
+			Bold(true)
+
 	CursorStyle = lipgloss.NewStyle().
 			Foreground(Primary).
 			Bold(true)
@@ -118,17 +123,6 @@ var (
 
 	HelpSeparator = lipgloss.NewStyle().
 			Foreground(Surface)
-
-	// Status bar
-	StatusBarStyle = lipgloss.NewStyle().
-			Foreground(Text).
-			Background(lipgloss.Color("#1F2937")).
-			Padding(0, 1)
-
-	StatusBarKeyStyle = lipgloss.NewStyle().
-				Foreground(Secondary).
-				Background(lipgloss.Color("#1F2937")).
-				Bold(true)
 
 	// Breadcrumb
 	BreadcrumbStyle = lipgloss.NewStyle().

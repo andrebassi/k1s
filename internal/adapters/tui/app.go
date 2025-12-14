@@ -40,7 +40,6 @@ type Model struct {
 	config             *configs.Config
 	navigator          component.Navigator
 	dashboard          view.Dashboard
-	statusBar          component.StatusBar
 	help               component.HelpPanel
 	spinner            spinner.Model
 	workloadActionMenu component.WorkloadActionMenu
@@ -190,7 +189,6 @@ func NewWithOptions(opts Options) (*Model, error) {
 		config:             cfg,
 		navigator:          navigator,
 		dashboard:          view.NewDashboard(),
-		statusBar:          component.NewStatusBar(),
 		help:               component.NewHelpPanel(),
 		spinner:            s,
 		workloadActionMenu: component.NewWorkloadActionMenu(),
@@ -228,7 +226,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.navigator.SetSize(msg.Width, msg.Height-2)
 		m.dashboard.SetSize(msg.Width, msg.Height-2)
-		m.statusBar.SetWidth(msg.Width)
 		m.help.SetSize(msg.Width, msg.Height)
 		return m, nil
 
@@ -715,18 +712,9 @@ func (m Model) View() string {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, loadingMsg)
 	}
 
-	// Build footer
-	ctxStyle := lipgloss.NewStyle().Foreground(style.Muted)
-	ctxValueStyle := lipgloss.NewStyle().Foreground(style.Primary)
-	footer := ctxStyle.Render("ctx:") + ctxValueStyle.Render(m.k8sClient.Context()) +
-		ctxStyle.Render(" | ns:") + ctxValueStyle.Render(m.k8sClient.Namespace()) +
-		ctxStyle.Render(" | res:") + ctxValueStyle.Render(string(m.navigator.ResourceType()))
-
-
 	// Calculate dimensions for content box
-	footerHeight := 1
-	contentHeight := m.height - footerHeight - 3 // 3 for border top/bottom and footer spacing
-	contentWidth := m.width - 2                   // 2 for border left/right
+	contentHeight := m.height - 2 // 2 for border top/bottom
+	contentWidth := m.width - 2   // 2 for border left/right
 
 	var content string
 	switch m.view {
@@ -832,7 +820,7 @@ func (m Model) View() string {
 
 	boxedContent := boxStyle.Render(content)
 
-	return boxedContent + "\n" + footer
+	return boxedContent
 }
 
 func (m Model) renderNodesPanel(width, height int) string {
