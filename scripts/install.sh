@@ -260,30 +260,79 @@ try_package_manager() {
         fi
     fi
 
-    # Termux - check and install kubectl
+    # Termux info
     if [[ "$IS_TERMUX" == "true" ]]; then
         info "Installing k1s for Termux (Android)"
-        if ! command -v kubectl &> /dev/null; then
-            warn "kubectl not found. Installing kubectl..."
-            install_kubectl_termux
-        else
-            info "kubectl found: $(kubectl version --client --short 2>/dev/null || kubectl version --client 2>/dev/null | head -1)"
-        fi
         echo ""
     fi
 }
 
-# Install kubectl on Termux
-install_kubectl_termux() {
+# Check and install kubectl if missing
+check_kubectl() {
+    if command -v kubectl &> /dev/null; then
+        info "kubectl found: $(kubectl version --client --short 2>/dev/null || kubectl version --client 2>/dev/null | head -1)"
+    else
+        warn "kubectl not found"
+        info "Installing kubectl..."
+        install_kubectl
+    fi
+}
+
+# Install kubectl
+install_kubectl() {
     local kubectl_version
     kubectl_version=$(curl -sL https://dl.k8s.io/release/stable.txt)
 
-    info "Downloading kubectl $kubectl_version for Android..."
-    if curl -sL "https://dl.k8s.io/release/${kubectl_version}/bin/linux/arm64/kubectl" -o "$PREFIX/bin/kubectl"; then
-        chmod +x "$PREFIX/bin/kubectl"
+    local kubectl_os="$OS"
+    local kubectl_arch="$ARCH"
+    local kubectl_dest="/usr/local/bin/kubectl"
+
+    # Termux uses PREFIX
+    if [[ "$IS_TERMUX" == "true" ]]; then
+        kubectl_dest="$PREFIX/bin/kubectl"
+        kubectl_os="linux"
+    fi
+
+    # Map arch names
+    [[ "$kubectl_arch" == "amd64" ]] && kubectl_arch="amd64"
+    [[ "$kubectl_arch" == "arm64" ]] && kubectl_arch="arm64"
+    [[ "$kubectl_arch" == "armv7" ]] && kubectl_arch="arm"
+
+    local kubectl_url="https://dl.k8s.io/release/${kubectl_version}/bin/${kubectl_os}/${kubectl_arch}/kubectl"
+
+    info "Downloading kubectl $kubectl_version..."
+    local tmp_kubectl="${TMPDIR:-/tmp}/kubectl-$$"
+
+    if curl -sL "$kubectl_url" -o "$tmp_kubectl"; then
+        chmod +x "$tmp_kubectl"
+
+        if [[ "$IS_TERMUX" == "true" ]]; then
+            mv "$tmp_kubectl" "$kubectl_dest"
+        else
+            $SUDO mv "$tmp_kubectl" "$kubectl_dest"
+        fi
+
         success "kubectl installed successfully!"
     else
-        warn "Failed to install kubectl. Install manually: pkg install kubectl"
+        warn "Failed to install kubectl automatically"
+        show_kubectl_install_help
+    fi
+}
+
+# Show kubectl install help
+show_kubectl_install_help() {
+    echo ""
+    warn "Please install kubectl manually:"
+    if [[ "$IS_TERMUX" == "true" ]]; then
+        echo "  pkg install kubectl"
+    elif [[ "$OS" == "darwin" ]]; then
+        echo "  brew install kubectl"
+    elif command -v apt &> /dev/null; then
+        echo "  sudo apt install kubectl"
+    elif command -v dnf &> /dev/null; then
+        echo "  sudo dnf install kubectl"
+    else
+        echo "  https://kubernetes.io/docs/tasks/tools/"
     fi
 }
 
@@ -299,6 +348,7 @@ main() {
     check_permissions
     install_binary
     verify_installation
+    check_kubectl
 
     echo ""
     success "k1s is ready to use!"
