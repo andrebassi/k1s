@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>k1s</id>
+    <version>0.1.4</version>
+    <title>k1s - Kubernetes TUI Debugger</title>
+    <authors>Andre Bassi</authors>
+    <owners>andrebassi</owners>
+    <licenseUrl>https://github.com/andrebassi/k1s/blob/main/LICENSE</licenseUrl>
+    <projectUrl>https://github.com/andrebassi/k1s</projectUrl>
+    <iconUrl>https://raw.githubusercontent.com/andrebassi/k1s/main/assets/icon.png</iconUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>Kubernetes TUI Debugger - One screen to see why your pod is broken.
+
+k1s is a terminal-based user interface (TUI) for debugging Kubernetes workloads. It provides real-time logs, events, metrics, and resource inspection in a single dashboard view.
+
+Features:
+- Pod debugging dashboard with logs, events, and metrics
+- Workload management (Deployments, StatefulSets, DaemonSets, Jobs, CronJobs)
+- HPA viewing with CPU/Memory/External metrics
+- ConfigMaps and Secrets viewer with clipboard support
+- Cross-namespace resource copying
+- Vim-style keyboard navigation
+    </description>
+    <summary>Kubernetes TUI Debugger - One screen to see why your pod is broken</summary>
+    <releaseNotes>https://github.com/andrebassi/k1s/releases</releaseNotes>
+    <tags>kubernetes k8s kubectl tui debugger pods logs events metrics devops cli</tags>
+    <projectSourceUrl>https://github.com/andrebassi/k1s</projectSourceUrl>
+    <packageSourceUrl>https://github.com/andrebassi/k1s/tree/main/chocolatey</packageSourceUrl>
+    <docsUrl>https://github.com/andrebassi/k1s#readme</docsUrl>
+    <bugTrackerUrl>https://github.com/andrebassi/k1s/issues</bugTrackerUrl>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
