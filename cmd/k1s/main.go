@@ -26,8 +26,12 @@ import (
 	"github.com/andrebassi/k1s/internal/adapters/tui"
 )
 
-// version defines the current version of k1s.
-const version = "0.1.0"
+// Version information - set via ldflags during build
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
 
 // preflightChecks verifies that kubectl is installed and kubeconfig is valid.
 // Returns an error if any check fails.
@@ -70,6 +74,8 @@ func main() {
 		switch os.Args[i] {
 		case "--version", "-v":
 			fmt.Printf("k1s version %s\n", version)
+			fmt.Printf("  commit: %s\n", commit)
+			fmt.Printf("  built:  %s\n", date)
 			os.Exit(0)
 		case "--help", "-h":
 			printHelp()
